@@ -29,6 +29,12 @@ public partial class MainForm : Form
     {
         this.Hide();
         
+        // Pre-warm Copilot client in background to eliminate cold-start on first use
+        if (ConfigManager.IsProviderConfigured() && ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
+        {
+            _ = CopilotClientManager.Instance.WarmUpAsync();
+        }
+        
         // Check if provider is configured on startup
         if (!ConfigManager.IsProviderConfigured())
         {

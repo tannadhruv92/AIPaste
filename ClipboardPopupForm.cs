@@ -39,6 +39,7 @@ namespace AIPaste
                 if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
                 {
                     await LoadModelsAsync();
+                    PreWarmDefaultSession();
                 }
             };
         }
@@ -403,6 +404,29 @@ namespace AIPaste
 
         #region GitHub Copilot SDK Methods
 
+        /// <summary>
+        /// Pre-creates a session with default settings (rewrite mode) while the user picks options.
+        /// </summary>
+        private void PreWarmDefaultSession()
+        {
+            string model = modelSelector?.SelectedItem?.ToString() ?? "";
+            if (string.IsNullOrEmpty(model) || model == "Loading models..." || model == "Error loading models")
+                return;
+            
+            CopilotClientManager.Instance.PreWarmSession(new SessionConfig
+            {
+                Model = model,
+                SystemMessage = new SystemMessageConfig
+                {
+                    Mode = SystemMessageMode.Replace,
+                    Content = "You are a helpful assistant that rewrites text based on the specified tone and translation requirements. Only return the rewritten text, nothing else."
+                },
+                AvailableTools = new List<string>(),
+                OnPermissionRequest = PermissionHandler.ApproveAll,
+                Streaming = true
+            });
+        }
+
         private async Task<string> ProcessWithCopilotAsync(string text, string tone, string translation, string model)
         {
             string systemPrompt = "You are a helpful assistant that rewrites text based on the specified tone and translation requirements. Only return the rewritten text, nothing else.";
@@ -434,7 +458,10 @@ namespace AIPaste
 
         private async Task<string> ExecuteCopilotRequestAsync(string systemPrompt, string userPrompt, string model)
         {
-            // Use singleton client manager - avoids creating new client each time
+            // Clear result area for streaming output
+            if (resultTextBox != null && !resultTextBox.IsDisposed)
+                resultTextBox.Text = string.Empty;
+            
             await using var session = await CopilotClientManager.Instance.CreateSessionAsync(new SessionConfig
             {
                 Model = model,
@@ -443,13 +470,41 @@ namespace AIPaste
                     Mode = SystemMessageMode.Replace,
                     Content = systemPrompt
                 },
-                AvailableTools = new List<string>() // Disable all tools - just text processing
+                AvailableTools = new List<string>(),
+                OnPermissionRequest = PermissionHandler.ApproveAll,
+                Streaming = true
             });
             
-            // Use SendAndWaitAsync for direct response (no streaming events to handle)
-            var response = await session.SendAndWaitAsync(new MessageOptions { Prompt = userPrompt });
+            // Stream response chunks into the result textbox as they arrive
+            var result = new System.Text.StringBuilder();
+            var done = new TaskCompletionSource();
             
-            return response?.Data?.Content ?? string.Empty;
+            session.On(evt =>
+            {
+                if (evt is AssistantMessageDeltaEvent delta && !string.IsNullOrEmpty(delta.Data?.DeltaContent))
+                {
+                    result.Append(delta.Data.DeltaContent);
+                    if (resultTextBox != null && !resultTextBox.IsDisposed)
+                    {
+                        resultTextBox.Invoke(() =>
+                        {
+                            resultTextBox.Text = result.ToString();
+                            resultTextBox.SelectionStart = resultTextBox.Text.Length;
+                            resultTextBox.Refresh();
+                            if (loadingLabel != null) loadingLabel.Visible = false;
+                        });
+                    }
+                }
+                else if (evt is SessionIdleEvent)
+                {
+                    done.TrySetResult();
+                }
+            });
+            
+            await session.SendAsync(new MessageOptions { Prompt = userPrompt });
+            await done.Task;
+            
+            return result.ToString();
         }
 
         #endregion
