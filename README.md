@@ -40,7 +40,7 @@ A Windows system tray application that enhances your clipboard with AI-powered t
 - Windows 10/11
 - .NET 9.0 Runtime
 - One of the following:
-  - **GitHub Copilot**: Active GitHub Copilot subscription + [Copilot CLI](https://github.com/github/copilot-cli)
+  - **GitHub Copilot**: Active GitHub Copilot subscription (Copilot CLI is bundled with the app)
   - **Azure OpenAI**: Azure subscription with deployed OpenAI resource
 
 ## 📥 Installation
@@ -61,19 +61,11 @@ dotnet build -c Release
 
 ### GitHub Copilot Setup
 
-1. Install [Copilot CLI](https://github.com/github/copilot-cli)
-2. Open terminal and run:
-   ```
-   copilot
-   ```
-3. In the Copilot CLI, type:
-   ```
-   /login
-   ```
-4. Complete the authentication in your browser
-5. In AIPaste, select **GitHub Copilot** as provider
-6. Click **Check Auth** to verify authentication
-7. Select your preferred model and click **Save**
+1. In AIPaste, select **GitHub Copilot** as provider
+2. Click **Check Auth Status** — this will launch the authentication flow
+3. Complete the authentication in your browser
+4. Click **Check Auth Status** again to verify
+5. Select your preferred model and click **Save**
 
 ### Azure OpenAI Setup
 
