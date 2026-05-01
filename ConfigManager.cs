@@ -348,6 +348,13 @@ namespace AIPaste
     public class GitHubCopilotConfig
     {
         public string PreferredModel { get; set; } = "gpt-4o";
+
+        /// <summary>
+        /// Optional absolute path to a copilot.exe. When empty, CliPathResolver
+        /// auto-discovers one from PATH / winget / npm-global. Set this to pin a
+        /// specific install if multiple copies exist on the machine.
+        /// </summary>
+        public string CliPathOverride { get; set; } = string.Empty;
     }
     
     public class CustomProviderConfig

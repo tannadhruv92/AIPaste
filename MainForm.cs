@@ -54,28 +54,51 @@ public partial class MainForm : Form
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
         
-        var configForm = new ConfigurationForm();
-        configForm.ShowDialog();
+        // Open the new shell directly. The user can switch to Settings via the rail.
+        var popup = new AIPaste.UI.AppShellForm(string.Empty);
+        popup.Show();
     }
 
     private void InitializeSystemTray()
     {
         contextMenu = new ContextMenuStrip();
-        contextMenu.Items.Add("Open Clipboard Popup", null, OnOpenClipboardPopup);
-        contextMenu.Items.Add("Configure Provider", null, OnConfigureProvider);
-        contextMenu.Items.Add("Manage Custom Actions", null, OnManageCustomActions);
+        contextMenu.Items.Add("Open AIPaste", null, OnOpenClipboardPopup);
         contextMenu.Items.Add("-");
         contextMenu.Items.Add("Exit", null, OnExit);
 
         notifyIcon = new NotifyIcon
         {
-            Icon = System.Drawing.SystemIcons.Application,
+            Icon = LoadAppIcon(),
             ContextMenuStrip = contextMenu,
             Text = "AIPaste",
             Visible = true
         };
 
         notifyIcon.DoubleClick += (s, e) => OpenClipboardPopup();
+    }
+
+    /// <summary>
+    /// Loads the app icon embedded in AIPaste.exe (set via &lt;ApplicationIcon&gt; in csproj),
+    /// falling back to the default application icon if extraction fails.
+    /// </summary>
+    private static System.Drawing.Icon LoadAppIcon()
+    {
+        try
+        {
+            var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
+            if (string.IsNullOrEmpty(exePath))
+                exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            if (!string.IsNullOrEmpty(exePath))
+            {
+                // For .NET 9, GetEntryAssembly().Location returns the .dll, not the .exe.
+                if (exePath.EndsWith(".dll", StringComparison.OrdinalIgnoreCase))
+                    exePath = System.IO.Path.ChangeExtension(exePath, ".exe");
+                var icon = System.Drawing.Icon.ExtractAssociatedIcon(exePath);
+                if (icon != null) return icon;
+            }
+        }
+        catch { }
+        return System.Drawing.SystemIcons.Application;
     }
 
     private void OnOpenClipboardPopup(object? sender, EventArgs e)
@@ -107,7 +130,7 @@ public partial class MainForm : Form
 
             if (!string.IsNullOrEmpty(clipboardText))
             {
-                var popup = new ClipboardPopupForm(clipboardText);
+                var popup = new AIPaste.UI.AppShellForm(clipboardText);
                 popup.Show();
             }
             else
@@ -118,21 +141,9 @@ public partial class MainForm : Form
         }
         catch (Exception ex)
         {
-            MessageBox.Show($"Error opening clipboard popup: {ex.Message}", "Error", 
+            MessageBox.Show($"Error opening clipboard popup: {ex.Message}\n\n{ex.GetType().FullName}\n{ex.StackTrace}", "Error", 
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
-    }
-
-    private void OnConfigureProvider(object? sender, EventArgs e)
-    {
-        var configForm = new ConfigurationForm();
-        configForm.ShowDialog();
-    }
-
-    private void OnManageCustomActions(object? sender, EventArgs e)
-    {
-        var customActionsForm = new CustomActionsForm();
-        customActionsForm.ShowDialog();
     }
 
     private void OnExit(object? sender, EventArgs e)

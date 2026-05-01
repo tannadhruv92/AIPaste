@@ -7,8 +7,28 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>app.ico</ApplicationIcon>
+    <!-- Product version — major rewrite with new UI shell. -->
+    <Version>2.0.0</Version>
+    <AssemblyVersion>2.0.0.0</AssemblyVersion>
+    <FileVersion>2.0.0.0</FileVersion>
+    <Product>AIPaste</Product>
+    <Company>Dhruv Tanna</Company>
+    <Copyright>Copyright © 2026 Dhruv Tanna</Copyright>
     <!-- Exclude satellite assemblies (localization) to keep release smaller -->
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
+    <!-- WFO1000: WinForms designer serialization warnings on custom controls used only in code. -->
+    <NoWarn>$(NoWarn);WFO1000</NoWarn>
+    <!-- Allow apphost to roll forward to any installed .NET 9 runtime patch. -->
+    <RollForward>LatestMinor</RollForward>
+    <!--
+      The GitHub.Copilot.SDK MSBuild target downloads a pinned copilot.exe from
+      npm and copies it into bin\runtimes\win-x64\native\. We keep that bundle
+      as a safety-net fallback so the app works even on machines without the
+      CLI installed. At runtime CliPathResolver prefers a system-installed CLI
+      (winget / npm -g / PATH) so users who run `copilot update` get the
+      latest models without rebuilding; only when no system CLI is found does
+      the SDK fall back to the bundled (and possibly older) binary.
+    -->
   </PropertyGroup>
 
   <ItemGroup>

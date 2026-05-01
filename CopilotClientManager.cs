@@ -1,4 +1,5 @@
 using GitHub.Copilot.SDK;
+using System.Diagnostics;
 
 namespace AIPaste
 {
@@ -14,6 +15,16 @@ namespace AIPaste
         private bool _isStarted;
         private DateTime _lastUsed;
         private readonly TimeSpan _idleTimeout = TimeSpan.FromMinutes(10);
+
+        /// <summary>
+        /// Path of the copilot.exe the active client is using, or null if the
+        /// SDK is using its bundled binary (under runtimes\win-x64\native\).
+        /// Populated after the first successful <see cref="GetClientAsync"/>.
+        /// </summary>
+        public string? ActiveCliPath { get; private set; }
+
+        /// <summary>True when the active client is using the SDK's bundled binary.</summary>
+        public bool IsUsingBundledCli => _isStarted && ActiveCliPath == null;
         
         // Pre-warmed session support
         private CopilotSession? _warmSession;
@@ -98,7 +109,19 @@ namespace AIPaste
         
         private async Task InitializeClientAsync()
         {
-            _client = new CopilotClient();
+            // Prefer a system-installed CLI (kept current via `copilot update`)
+            // so ListModelsAsync surfaces the latest models without rebuilding.
+            // If none is found, fall back to the SDK's bundled copilot.exe under
+            // runtimes\win-x64\native\ — older models, but the app still works.
+            var cliPath = CliPathResolver.Resolve();
+            ActiveCliPath = cliPath;
+            Trace.WriteLine(cliPath != null
+                ? $"[AIPaste] Copilot CLI source: SYSTEM ({cliPath})"
+                : "[AIPaste] Copilot CLI source: BUNDLED (runtimes\\win-x64\\native\\copilot.exe)");
+
+            _client = cliPath != null
+                ? new CopilotClient(new CopilotClientOptions { CliPath = cliPath })
+                : new CopilotClient();
             await _client.StartAsync();
             _isStarted = true;
         }
@@ -192,6 +215,7 @@ namespace AIPaste
         {
             await DisposePreWarmedSessionAsync();
             await DisposeClientAsync();
+            CliPathResolver.Invalidate();
         }
     }
 }
