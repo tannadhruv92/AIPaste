@@ -1,7 +1,7 @@
 using System.Drawing;
 using System.Windows.Forms;
+using AIPaste.Copilot;
 using AIPaste.UI.Controls;
-using GitHub.Copilot.SDK;
 
 namespace AIPaste.UI.Panes;
 
@@ -17,9 +17,11 @@ public class SettingsPane : UserControl
     private ProviderCard _azureCard = null!;
     private SurfaceCard _authCard = null!;
     private StatusPill _authStatus = null!;
-    private TextBox _cliCmd = null!;
-    private Label _cliSourceLabel = null!;
-    private ToolTip _cliSourceTooltip = null!;
+    private Label _authHint = null!;
+    private Button _signInBtn = null!;
+    private Button _signOutBtn = null!;
+    private TextBox _codeBox = null!;
+    private Button _copyCodeBtn = null!;
     private SurfaceCard _modelCard = null!;
     private ComboBox _modelCombo = null!;
     private SurfaceCard _customCard = null!;
@@ -27,9 +29,12 @@ public class SettingsPane : UserControl
     private TextBox _endpointBox = null!;
     private TextBox _deploymentBox = null!;
 
+    private CancellationTokenSource? _signInCts;
+
     private AIProvider _selectedProvider;
 
     public event EventHandler? Saved;
+    public event EventHandler? AuthChanged;
 
     public SettingsPane(Action onClose)
     {
@@ -65,7 +70,7 @@ public class SettingsPane : UserControl
             Width = 600,
             Margin = new Padding(0, 4, 0, 18),
         };
-        _copilotCard = new ProviderCard("⚡", "GitHub Copilot", "Uses your GitHub subscription via CLI auth", true);
+        _copilotCard = new ProviderCard("⚡", "GitHub Copilot", "Uses your GitHub subscription — sign in once", true);
         _copilotCard.Location = new Point(0, 0);
         _copilotCard.Size = new Size(290, 86);
         _copilotCard.Click += (_, _) => SelectProvider(AIProvider.GitHubCopilot);
@@ -84,7 +89,7 @@ public class SettingsPane : UserControl
             BorderColor = Theme.Border,
             CornerRadius = Theme.CornerRadiusLg,
             Width = 600,
-            Height = 140,
+            Height = 150,
             Margin = new Padding(0, 0, 0, 16),
             Padding = new Padding(16),
         };
@@ -97,52 +102,57 @@ public class SettingsPane : UserControl
             Location = new Point(16, 14),
             BackColor = Color.Transparent,
         };
-        var authSub = new Label
+        _authHint = new Label
         {
-            Text = "Run copilot then type /login",
+            Text = "Sign in with your GitHub account to use Copilot.",
             ForeColor = Theme.TextDim,
             Font = Theme.Small(),
             AutoSize = true,
-            Location = new Point(16, 34),
+            Location = new Point(16, 38),
+            MaximumSize = new Size(560, 0),
             BackColor = Color.Transparent,
         };
         _authStatus = new StatusPill { Location = new Point(460, 14) };
-        _cliCmd = new TextBox
+        _codeBox = new TextBox
         {
-            Text = "copilot",
+            Text = string.Empty,
             ReadOnly = true,
+            TextAlign = HorizontalAlignment.Center,
             BackColor = Color.FromArgb(10, 10, 12),
             ForeColor = Theme.Success,
             Font = Theme.Mono(),
-            BorderStyle = BorderStyle.None,
-            Location = new Point(16, 64),
-            Size = new Size(380, 28),
+            BorderStyle = BorderStyle.FixedSingle,
+            Location = new Point(16, 70),
+            Size = new Size(150, 28),
+            Visible = false,
         };
-        var copyBtn = MakeMiniBtn("📋  Copy", () =>
+        _copyCodeBtn = MakeMiniBtn("📋  Copy", () =>
         {
-            Clipboard.SetText("copilot");
-            _authStatus.Text = "Copied";
+            if (!string.IsNullOrEmpty(_codeBox.Text))
+            {
+                Clipboard.SetText(_codeBox.Text);
+                _authStatus.Set("Code copied", StatusKind.Pending);
+            }
         });
-        copyBtn.Location = new Point(404, 62);
-        var recheckBtn = MakeMiniBtn("↻  Re-check", async () => await CheckAuthAsync());
-        recheckBtn.Location = new Point(484, 62);
-        _cliSourceLabel = new Label
-        {
-            Text = "CLI: (not yet connected)",
-            ForeColor = Theme.TextDim,
-            Font = Theme.Small(),
-            AutoSize = true,
-            Location = new Point(16, 104),
-            BackColor = Color.Transparent,
-        };
-        _cliSourceTooltip = new ToolTip { AutoPopDelay = 10000, InitialDelay = 300 };
+        _copyCodeBtn.Location = new Point(174, 70);
+        _copyCodeBtn.Visible = false;
+        _signInBtn = MakeAccentBtn("🔓  Sign in", async () => await StartSignInAsync());
+        _signInBtn.Location = new Point(16, 98);
+        _signOutBtn = MakeMiniBtn("Sign out", () => SignOut());
+        _signOutBtn.Size = new Size(96, 30);
+        _signOutBtn.Location = new Point(16, 98);
+        _signOutBtn.ForeColor = Theme.Danger;
+        _signOutBtn.BackColor = Color.FromArgb(40, 248, 113, 113);
+        _signOutBtn.FlatAppearance.BorderColor = Theme.Danger;
+        _signOutBtn.FlatAppearance.MouseOverBackColor = Color.FromArgb(70, 248, 113, 113);
+        _signOutBtn.Visible = false;
         _authCard.Controls.Add(authTitle);
-        _authCard.Controls.Add(authSub);
+        _authCard.Controls.Add(_authHint);
         _authCard.Controls.Add(_authStatus);
-        _authCard.Controls.Add(_cliCmd);
-        _authCard.Controls.Add(copyBtn);
-        _authCard.Controls.Add(recheckBtn);
-        _authCard.Controls.Add(_cliSourceLabel);
+        _authCard.Controls.Add(_codeBox);
+        _authCard.Controls.Add(_copyCodeBtn);
+        _authCard.Controls.Add(_signInBtn);
+        _authCard.Controls.Add(_signOutBtn);
         stack.Controls.Add(_authCard);
 
         // Model picker (Copilot only)
@@ -343,59 +353,121 @@ public class SettingsPane : UserControl
 
     private async Task CheckAuthAsync()
     {
+        if (!CopilotAuth.IsSignedIn)
+        {
+            SetAuthUi(signedIn: false, "Sign in with your GitHub account to use Copilot.");
+            _authStatus.Set("Not signed in", StatusKind.Danger);
+            _modelCombo.Items.Clear();
+            return;
+        }
+
         _authStatus.Set("Checking…", StatusKind.Pending);
         try
         {
             var (ok, msg) = await ConfigManager.CheckCopilotAuthAsync();
             if (ok)
             {
+                SetAuthUi(signedIn: true, "You're signed in to GitHub Copilot.");
                 _authStatus.Set("Authenticated", StatusKind.Success);
                 await LoadModelsAsync();
             }
             else
             {
+                SetAuthUi(signedIn: false, msg);
                 _authStatus.Set("Not signed in", StatusKind.Danger);
                 _modelCombo.Items.Clear();
             }
         }
-        catch
+        catch (Exception ex)
         {
+            SetAuthUi(signedIn: false, $"Error: {ex.Message}");
             _authStatus.Set("Error", StatusKind.Danger);
         }
-        UpdateCliSourceLabel();
     }
 
-    private void UpdateCliSourceLabel()
+    private async Task StartSignInAsync()
     {
-        var path = CopilotClientManager.Instance.ActiveCliPath;
-        if (path != null)
+        _signInBtn.Enabled = false;
+        _signInCts?.Cancel();
+        _signInCts = new CancellationTokenSource();
+        var ct = _signInCts.Token;
+
+        try
         {
-            // System CLI — show short marker and origin (winget / npm / PATH).
-            _cliSourceLabel.Text = $"● CLI: System  ({DescribeCliOrigin(path)})";
-            _cliSourceLabel.ForeColor = Theme.Success;
-            _cliSourceTooltip.SetToolTip(_cliSourceLabel, path);
+            _authStatus.Set("Starting…", StatusKind.Pending);
+            var info = await CopilotAuth.StartDeviceFlowAsync(ct);
+
+            // Show the code, auto-copy it, and open the browser for the user.
+            _codeBox.Text = info.UserCode;
+            _codeBox.Visible = true;
+            _copyCodeBtn.Visible = true;
+            try { Clipboard.SetText(info.UserCode); } catch { /* clipboard may be busy */ }
+            _authHint.Text = "We opened your browser. Paste the code (already copied) and authorize.";
+            _authStatus.Set("Waiting…", StatusKind.Pending);
+
+            try
+            {
+                System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo
+                {
+                    FileName = info.VerificationUri,
+                    UseShellExecute = true,
+                });
+            }
+            catch { /* user can navigate manually */ }
+
+            bool ok = await CopilotAuth.PollForTokenAsync(info, ct);
+            if (ok)
+            {
+                _codeBox.Visible = false;
+                _copyCodeBtn.Visible = false;
+                await CheckAuthAsync();
+                AuthChanged?.Invoke(this, EventArgs.Empty);
+            }
+            else
+            {
+                _authStatus.Set("Sign-in failed", StatusKind.Danger);
+                _authHint.Text = "Sign-in was not completed. Please try again.";
+                _codeBox.Visible = false;
+                _copyCodeBtn.Visible = false;
+            }
         }
-        else if (CopilotClientManager.Instance.IsUsingBundledCli)
+        catch (OperationCanceledException)
         {
-            _cliSourceLabel.Text = "● CLI: Bundled  (install Copilot CLI for latest models)";
-            _cliSourceLabel.ForeColor = Theme.TextDim;
-            _cliSourceTooltip.SetToolTip(_cliSourceLabel,
-                "Using runtimes\\win-x64\\native\\copilot.exe shipped with the SDK.\n" +
-                "Run `winget install GitHub.Copilot` or `npm i -g @github/copilot` to use the latest CLI.");
+            // Cancelled — leave UI as-is.
         }
-        else
+        catch (Exception ex)
         {
-            _cliSourceLabel.Text = "CLI: (not yet connected)";
-            _cliSourceLabel.ForeColor = Theme.TextDim;
-            _cliSourceTooltip.SetToolTip(_cliSourceLabel, string.Empty);
+            _authStatus.Set("Error", StatusKind.Danger);
+            _authHint.Text = $"Error: {ex.Message}";
+            _codeBox.Visible = false;
+            _copyCodeBtn.Visible = false;
+        }
+        finally
+        {
+            _signInBtn.Enabled = true;
         }
     }
 
-    private static string DescribeCliOrigin(string path)
+    private void SignOut()
     {
-        if (path.Contains(@"\WinGet\Packages\", StringComparison.OrdinalIgnoreCase)) return "winget";
-        if (path.Contains(@"\npm\node_modules\", StringComparison.OrdinalIgnoreCase)) return "npm";
-        return "PATH";
+        _signInCts?.Cancel();
+        CopilotAuth.SignOut();
+        _modelCombo.Items.Clear();
+        SetAuthUi(signedIn: false, "Sign in with your GitHub account to use Copilot.");
+        _authStatus.Set("Not signed in", StatusKind.Danger);
+        AuthChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private void SetAuthUi(bool signedIn, string hint)
+    {
+        _authHint.Text = hint;
+        _signInBtn.Visible = !signedIn;
+        _signOutBtn.Visible = signedIn;
+        if (signedIn)
+        {
+            _codeBox.Visible = false;
+            _copyCodeBtn.Visible = false;
+        }
     }
 
     private async Task LoadModelsAsync()

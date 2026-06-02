@@ -208,6 +208,7 @@ public class AppShellForm : Form
                         m => { _statusBar.ModelText = m; },
                         c => { _statusBar.ModeChip = c; },
                         h => { _statusBar.Hint = h; },
+                        t => { _statusBar.Timing = t; },
                         () => ShowPane(AppPane.CustomActions),
                         () => ShowPane(AppPane.Settings))
                     { Dock = DockStyle.Fill };
@@ -247,6 +248,13 @@ public class AppShellForm : Form
                     _processPane?.Dispose();
                     _processPane = null;
                 };
+                _settingsPane.AuthChanged += (_, _) =>
+                {
+                    _statusBar.Authenticated = ConfigManager.IsConfigComplete();
+                    _processPane?.Dispose();
+                    _processPane = null;
+                    RefreshStatusModel();
+                };
                 _contentHost.Controls.Add(_settingsPane);
                 _appTitle.Text = "AIPaste";
                 _appSubtitle.Text = "Settings · provider & default model";
@@ -254,6 +262,23 @@ public class AppShellForm : Form
         }
         _contentHost.ResumeLayout();
         _rail.Selected = pane;
+    }
+
+    /// <summary>Refreshes the status-bar model text based on the current auth/provider state.</summary>
+    private void RefreshStatusModel()
+    {
+        if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
+        {
+            if (!AIPaste.Copilot.CopilotAuth.IsSignedIn)
+            {
+                _statusBar.ModelText = "Sign in to select a model";
+                return;
+            }
+            _statusBar.ModelText = ConfigManager.GetCopilotPreferredModel();
+            return;
+        }
+        var dep = ConfigManager.GetCustomDeploymentId();
+        _statusBar.ModelText = string.IsNullOrEmpty(dep) ? "(no model)" : dep;
     }
 
     private void OnGlobalKeyDown(object? sender, KeyEventArgs e)

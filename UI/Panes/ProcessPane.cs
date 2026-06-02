@@ -1,9 +1,9 @@
 using System.Drawing;
 using System.Windows.Forms;
+using AIPaste.Copilot;
 using AIPaste.UI.Controls;
 using Azure;
 using Azure.AI.OpenAI;
-using GitHub.Copilot.SDK;
 
 namespace AIPaste.UI.Panes;
 
@@ -18,6 +18,7 @@ public class ProcessPane : UserControl
     private readonly Action<string> _setStatusModel;
     private readonly Action<string> _setStatusModeChip;
     private readonly Action<string> _setStatusHint;
+    private readonly Action<string> _setStatusTiming;
     private readonly Action _onRequestManageActions;
     private readonly Action _onRequestSettings;
 
@@ -52,6 +53,7 @@ public class ProcessPane : UserControl
         Action<string> setStatusModel,
         Action<string> setStatusModeChip,
         Action<string> setStatusHint,
+        Action<string> setStatusTiming,
         Action onRequestManageActions,
         Action onRequestSettings)
     {
@@ -59,6 +61,7 @@ public class ProcessPane : UserControl
         _setStatusModel = setStatusModel;
         _setStatusModeChip = setStatusModeChip;
         _setStatusHint = setStatusHint;
+        _setStatusTiming = setStatusTiming;
         _onRequestManageActions = onRequestManageActions;
         _onRequestSettings = onRequestSettings;
 
@@ -71,8 +74,6 @@ public class ProcessPane : UserControl
         HandleCreated += async (_, _) =>
         {
             await LoadModelsAsync();
-            // Pre-warm a session for snappy first request (Rewrite default)
-            PreWarmDefaultSession();
         };
     }
 
@@ -517,6 +518,12 @@ public class ProcessPane : UserControl
         {
             if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
             {
+                if (!CopilotAuth.IsSignedIn)
+                {
+                    _splitBtn.ModelName = "Sign in to select";
+                    _setStatusModel("Sign in to select a model");
+                    return;
+                }
                 var models = await ConfigManager.GetCopilotModelsAsync();
                 if (models != null && models.Count > 0)
                 {
@@ -550,7 +557,7 @@ public class ProcessPane : UserControl
 
     private async Task ShowModelPickerAsync()
     {
-        IReadOnlyList<ModelInfo>? models = null;
+        IReadOnlyList<CopilotModel>? models = null;
         try { models = await ConfigManager.GetCopilotModelsAsync(); } catch { }
         if (models == null || models.Count == 0) return;
 
@@ -577,28 +584,6 @@ public class ProcessPane : UserControl
     }
 
     // ============== Pre-warm + Process ==============
-    private void PreWarmDefaultSession()
-    {
-        if (ConfigManager.GetProvider() != AIProvider.GitHubCopilot) return;
-        if (string.IsNullOrEmpty(_splitBtn.ModelName)) return;
-        try
-        {
-            CopilotClientManager.Instance.PreWarmSession(new SessionConfig
-            {
-                Model = _splitBtn.ModelName,
-                SystemMessage = new SystemMessageConfig
-                {
-                    Mode = SystemMessageMode.Replace,
-                    Content = "You are a helpful assistant that rewrites text based on the specified tone and translation requirements. Only return the rewritten text, nothing else."
-                },
-                AvailableTools = new List<string>(),
-                OnPermissionRequest = PermissionHandler.ApproveAll,
-                Streaming = true
-            });
-        }
-        catch { /* swallow — pre-warm is best-effort */ }
-    }
-
     private async void OnProcessClicked(object? sender, EventArgs e)
     {
         await ExecuteCurrentRequestAsync(false);
@@ -616,6 +601,8 @@ public class ProcessPane : UserControl
         _resultLive.Visible = true;
         _resultBox.Text = isRetry ? string.Empty : "Processing…";
 
+        _setStatusTiming(string.Empty);
+        var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
             string systemPrompt;
@@ -658,47 +645,43 @@ public class ProcessPane : UserControl
             _processedText = string.Empty;
             _resultLive.Visible = false;
         }
+        finally
+        {
+            sw.Stop();
+            _setStatusTiming(FormatElapsed(sw.Elapsed));
+        }
+    }
+
+    private static string FormatElapsed(TimeSpan t)
+    {
+        double secs = t.TotalSeconds;
+        return secs < 1
+            ? $"{t.TotalMilliseconds:0} ms"
+            : $"{secs:0.0}s";
     }
 
     private async Task<string> ExecuteCopilotAsync(string systemPrompt, string userPrompt)
     {
         _resultBox.Text = string.Empty;
-        await using var session = await CopilotClientManager.Instance.CreateSessionAsync(new SessionConfig
-        {
-            Model = _splitBtn.ModelName,
-            SystemMessage = new SystemMessageConfig { Mode = SystemMessageMode.Replace, Content = systemPrompt },
-            AvailableTools = new List<string>(),
-            OnPermissionRequest = PermissionHandler.ApproveAll,
-            Streaming = true,
-        });
-
         var sb = new System.Text.StringBuilder();
-        var done = new TaskCompletionSource();
-        session.On(evt =>
-        {
-            if (evt is AssistantMessageDeltaEvent delta && !string.IsNullOrEmpty(delta.Data?.DeltaContent))
-            {
-                sb.Append(delta.Data.DeltaContent);
-                if (!IsDisposed && _resultBox.IsHandleCreated)
-                {
-                    _resultBox.BeginInvoke(() =>
-                    {
-                        // Normalize line endings: TextBox renders \n alone as a space.
-                        _resultBox.Text = NormalizeLineEndings(sb.ToString());
-                        _resultBox.SelectionStart = _resultBox.TextLength;
-                        _resultBox.ScrollToCaret();
-                    });
-                }
-            }
-            else if (evt is SessionIdleEvent)
-            {
-                done.TrySetResult();
-            }
-        });
 
-        await session.SendAsync(new MessageOptions { Prompt = userPrompt });
-        await done.Task;
-        return sb.ToString();
+        void OnDelta(string piece)
+        {
+            sb.Append(piece);
+            if (!IsDisposed && _resultBox.IsHandleCreated)
+            {
+                _resultBox.BeginInvoke(() =>
+                {
+                    // Normalize line endings: TextBox renders \n alone as a space.
+                    _resultBox.Text = NormalizeLineEndings(sb.ToString());
+                    _resultBox.SelectionStart = _resultBox.TextLength;
+                    _resultBox.ScrollToCaret();
+                });
+            }
+        }
+
+        return await CopilotApiClient.StreamChatAsync(
+            _splitBtn.ModelName, systemPrompt, userPrompt, OnDelta);
     }
 
     private string ExecuteCustomProvider(string systemPrompt, string userPrompt)

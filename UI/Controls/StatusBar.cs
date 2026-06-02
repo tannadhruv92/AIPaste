@@ -14,6 +14,7 @@ public class StatusBar : Control
     private int _customActionCount;
     private string _hint = string.Empty;
     private string _modeChip = string.Empty;
+    private string _timing = string.Empty;
 
     public StatusBar()
     {
@@ -33,6 +34,7 @@ public class StatusBar : Control
     public int CustomActionCount { get => _customActionCount; set { _customActionCount = value; Invalidate(); } }
     public string Hint { get => _hint; set { _hint = value ?? string.Empty; Invalidate(); } }
     public string ModeChip { get => _modeChip; set { _modeChip = value ?? string.Empty; Invalidate(); } }
+    public string Timing { get => _timing; set { _timing = value ?? string.Empty; Invalidate(); } }
 
     protected override void OnPaint(PaintEventArgs e)
     {
@@ -60,9 +62,12 @@ public class StatusBar : Control
         // Model
         if (!string.IsNullOrEmpty(_modelText))
         {
-            string modelText = "⚡ " + _modelText;
+            // Show a lightning bolt only for real model ids, not status messages.
+            bool isModel = _authenticated && !_modelText.Contains(' ');
+            string modelText = isModel ? "⚡ " + _modelText : _modelText;
+            Color modelColor = _authenticated ? Theme.TextDim : Theme.Danger;
             sz = TextRenderer.MeasureText(g, modelText, Font, Size.Empty, TextFormatFlags.NoPadding);
-            TextRenderer.DrawText(g, modelText, Font, new Point(x, y + (14 - sz.Height) / 2 + 1), Theme.TextDim, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, modelText, Font, new Point(x, y + (14 - sz.Height) / 2 + 1), modelColor, TextFormatFlags.NoPadding);
             x += sz.Width + 16;
         }
 
@@ -80,6 +85,15 @@ public class StatusBar : Control
             string caText = $"📋 {_customActionCount} custom action{(_customActionCount == 1 ? "" : "s")}";
             sz = TextRenderer.MeasureText(g, caText, Font, Size.Empty, TextFormatFlags.NoPadding);
             TextRenderer.DrawText(g, caText, Font, new Point(x, y + (14 - sz.Height) / 2 + 1), Theme.TextDim, TextFormatFlags.NoPadding);
+            x += sz.Width + 16;
+        }
+
+        // Timing (last request duration)
+        if (!string.IsNullOrEmpty(_timing))
+        {
+            string tText = "⏱ " + _timing;
+            sz = TextRenderer.MeasureText(g, tText, Font, Size.Empty, TextFormatFlags.NoPadding);
+            TextRenderer.DrawText(g, tText, Font, new Point(x, y + (14 - sz.Height) / 2 + 1), Theme.Success, TextFormatFlags.NoPadding);
         }
 
         // Right-side hint
