@@ -14,6 +14,8 @@ namespace AIPaste
         Custom = 2
     }
 
+    public enum ThemeMode { System = 0, Light = 1, Dark = 2 }
+
     public static class ConfigManager
     {
         private const string ConfigFileName = "config.json";
@@ -171,6 +173,24 @@ namespace AIPaste
             {
                 var config = GetConfig();
                 config.GitHubCopilot.PreferredModel = model;
+                SaveConfig();
+                return true;
+            }
+            catch
+            {
+                return false;
+            }
+        }
+
+        // Theme
+        public static ThemeMode GetThemeMode() => GetConfig().Theme;
+
+        public static bool SetThemeMode(ThemeMode mode)
+        {
+            try
+            {
+                var config = GetConfig();
+                config.Theme = mode;
                 SaveConfig();
                 return true;
             }
@@ -361,6 +381,7 @@ namespace AIPaste
     public class AppConfig
     {
         public AIProvider Provider { get; set; } = AIProvider.NotConfigured;
+        public ThemeMode Theme { get; set; } = ThemeMode.System;
         public GitHubCopilotConfig GitHubCopilot { get; set; } = new GitHubCopilotConfig();
         public CustomProviderConfig CustomProvider { get; set; } = new CustomProviderConfig();
         public List<CustomAction> CustomActions { get; set; } = new List<CustomAction>();

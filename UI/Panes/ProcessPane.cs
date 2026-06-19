@@ -10,8 +10,9 @@ namespace AIPaste.UI.Panes;
 public enum ProcessMode { Rewrite, Translate, Custom }
 
 /// <summary>
-/// The default pane: shows mode chips, tone/language/action chips,
-/// the original text, the split action button and the AI result.
+/// The default pane — the light "Transform Studio": a SOURCE pane on the left,
+/// a central SPINE (mode / model / transform) and a RESULT pane on the right,
+/// with a footer hosting timing, Regenerate and Accept &amp; Copy.
 /// </summary>
 public class ProcessPane : UserControl
 {
@@ -22,29 +23,33 @@ public class ProcessPane : UserControl
     private readonly Action _onRequestManageActions;
     private readonly Action _onRequestSettings;
 
-    // Layout cards
-    private SurfaceCard _toolbarCard = null!;
-    private FlowLayoutPanel _toolbarFlow = null!;
-    private ChipGroup _modeGroup = null!;
-    private ChipGroup _toneGroup = null!;
-    private ChipGroup _languageGroup = null!;
-    private ChipGroup _actionGroup = null!;
-
-    private SurfaceCard _originalCard = null!;
-    private TextBox _originalBox = null!;
+    // Source pane
+    private RichTextBox _originalBox = null!;
     private Label _charCount = null!;
 
-    private SurfaceCard _actionBar = null!;
-    private SplitActionButton _splitBtn = null!;
+    // Spine
+    private SpineDropdownButton _rewriteBtn = null!;
+    private SpineDropdownButton _translateBtn = null!;
+    private SpineDropdownButton _customBtn = null!;
+    private SpineDropdownButton _modelBtn = null!;
+    private TransformButton _transformBtn = null!;
 
-    private SurfaceCard _resultCard = null!;
-    private TextBox _resultBox = null!;
-    private Label _resultLive = null!;
-    private FlowLayoutPanel _resultTools = null!;
+    // Result pane
+    private RichTextBox _resultBox = null!;
 
+    // Footer
+    private Label _footerTiming = null!;
+
+    // State
     private string _originalText = string.Empty;
     private string _processedText = string.Empty;
     private ProcessMode _currentMode = ProcessMode.Rewrite;
+    private string _currentTone = "Professional";
+    private string _currentLanguage = "Hindi";
+    private CustomAction? _currentAction;
+    private string _currentModel = string.Empty;
+
+    private const string ResultPlaceholder = "✨  Result will appear here";
 
     public string ProcessedText => _processedText;
     public event EventHandler<string>? AcceptedAndCopied;
@@ -66,15 +71,16 @@ public class ProcessPane : UserControl
         _onRequestSettings = onRequestSettings;
 
         BackColor = Theme.Surface;
-        Padding = new Padding(18);
+        Padding = new Padding(0);
+
+        _currentAction = ConfigManager.GetCustomActions().FirstOrDefault();
+
         BuildLayout();
-        ApplyMode(ProcessMode.Rewrite);
+        SetActiveMode(ProcessMode.Rewrite);
         UpdateOriginal(_originalText);
-        // Fire & forget: load models when handle is created
-        HandleCreated += async (_, _) =>
-        {
-            await LoadModelsAsync();
-        };
+
+        // Fire & forget: load models when handle is created.
+        HandleCreated += async (_, _) => await LoadModelsAsync();
     }
 
     public void UpdateOriginal(string text)
@@ -84,92 +90,51 @@ public class ProcessPane : UserControl
         _charCount.Text = $"{_originalText.Length} chars";
     }
 
+    /// <summary>Gives keyboard focus to the primary (Rewrite) mode button.</summary>
+    public void FocusPrimary() => _rewriteBtn?.Focus();
+
+    // ============================================================== Layout ===
+
     private void BuildLayout()
     {
         SuspendLayout();
 
-        // ===== TOOLBAR =====
-        _toolbarCard = new SurfaceCard
-        {
-            FillColor = Theme.Surface3,
-            FillColor2 = Theme.Surface2,
-            BorderColor = Theme.Border,
-            CornerRadius = Theme.CornerRadiusLg,
-            Dock = DockStyle.Top,
-            Height = 56,
-            Padding = new Padding(14, 12, 14, 12),
-        };
+        var stage = BuildStage();
+        var footer = BuildFooter();
 
-        _toolbarFlow = new FlowLayoutPanel
+        // Fill first (back), then bottom (front) so Fill avoids the footer.
+        Controls.Add(stage);
+        Controls.Add(footer);
+
+        ResumeLayout(true);
+    }
+
+    private TableLayoutPanel BuildStage()
+    {
+        var stage = new TableLayoutPanel
         {
             Dock = DockStyle.Fill,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = true,
-            AutoSize = false,
-            BackColor = Color.Transparent,
+            ColumnCount = 3,
+            RowCount = 1,
+            BackColor = Theme.Surface,
             Margin = new Padding(0),
             Padding = new Padding(0),
         };
-        // Adds vertical breathing room between wrapped chip rows.
-        _toolbarFlow.Layout += (_, _) => UpdateToolbarHeight();
+        stage.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+        stage.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
+        stage.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute, 200));
+        stage.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 50));
 
-        _modeGroup = new ChipGroup("Mode");
-        _modeGroup.AddChip("Rewrite", "✨", active: true);
-        _modeGroup.AddChip("Translate", "🌐");
-        _modeGroup.AddChip("Custom", "⚡");
-        _modeGroup.SelectionChanged += OnModeChanged;
-        _modeGroup.Margin = new Padding(0, 0, 14, 8);
+        stage.Controls.Add(BuildSourcePane(), 0, 0);
+        stage.Controls.Add(BuildSpine(), 1, 0);
+        stage.Controls.Add(BuildResultPane(), 2, 0);
+        return stage;
+    }
 
-        _toneGroup = new ChipGroup("Tone");
-        _toneGroup.AddChip("Professional", active: true);
-        _toneGroup.AddChip("Casual");
-        _toneGroup.AddChip("Informative");
-        _toneGroup.AddChip("Enthusiastic");
-        _toneGroup.SelectionChanged += (_, _) => UpdateStatusModeChip();
-        _toneGroup.Margin = new Padding(0, 0, 14, 8);
+    private Panel BuildSourcePane()
+    {
+        var pane = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Margin = new Padding(0) };
 
-        _languageGroup = new ChipGroup("Language");
-        _languageGroup.AddChip("Hindi", "🇮🇳", active: true);
-        _languageGroup.AddChip("Gujarati", "🇮🇳");
-        _languageGroup.SelectionChanged += (_, _) => UpdateStatusModeChip();
-        _languageGroup.Margin = new Padding(0, 0, 14, 8);
-
-        _actionGroup = new ChipGroup("Action");
-        BuildCustomActionChips();
-        _actionGroup.DashedClicked += (_, _) => _onRequestManageActions();
-        _actionGroup.SelectionChanged += (_, _) => UpdateStatusModeChip();
-        _actionGroup.Margin = new Padding(0, 0, 14, 8);
-
-        _toolbarFlow.Controls.AddRange(new Control[] { _modeGroup, _toneGroup, _languageGroup, _actionGroup });
-        _toolbarCard.Controls.Add(_toolbarFlow);
-
-        // ===== ORIGINAL CARD =====
-        _originalCard = new SurfaceCard
-        {
-            FillColor = Theme.Surface2,
-            BorderColor = Theme.Border,
-            CornerRadius = Theme.CornerRadiusLg,
-            Dock = DockStyle.Top,
-            Height = 130,
-            Padding = new Padding(0),
-            Margin = new Padding(0, 12, 0, 0),
-        };
-        var origHeader = new Panel
-        {
-            Dock = DockStyle.Top,
-            Height = 32,
-            BackColor = Color.Transparent,
-            Padding = new Padding(14, 0, 14, 0),
-        };
-        var origLabel = new Label
-        {
-            Text = "📋  Original",
-            ForeColor = Theme.TextDim,
-            Font = Theme.SmallBold(),
-            AutoSize = true,
-            Location = new Point(14, 9),
-            BackColor = Color.Transparent,
-        };
         _charCount = new Label
         {
             Text = "0 chars",
@@ -178,200 +143,257 @@ public class ProcessPane : UserControl
             AutoSize = true,
             BackColor = Color.Transparent,
         };
-        origHeader.Controls.Add(origLabel);
-        origHeader.Controls.Add(_charCount);
-        // Pin _charCount to the right edge of the header.
-        void PositionCharCount()
-        {
-            if (_charCount.IsDisposed) return;
-            _charCount.Location = new Point(origHeader.ClientSize.Width - _charCount.Width - 14, 9);
-        }
-        origHeader.SizeChanged += (_, _) => PositionCharCount();
-        _charCount.SizeChanged += (_, _) => PositionCharCount();
-        var origDiv = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border };
+        var header = BuildPaneHeader("SOURCE", _charCount);
 
-        _originalBox = new TextBox
+        _originalBox = new RichTextBox
         {
-            Multiline = true,
             ReadOnly = true,
-            ScrollBars = ScrollBars.Vertical,
+            WordWrap = true,
+            DetectUrls = false,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
             BorderStyle = BorderStyle.None,
-            BackColor = Theme.Surface2,
+            BackColor = Theme.Surface,
             ForeColor = Theme.Text,
             Font = new Font(Theme.FontFamilyFallback, 10.5f),
             Dock = DockStyle.Fill,
         };
-        var origPad = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 8, 14, 12), BackColor = Color.Transparent };
-        origPad.Controls.Add(_originalBox);
+        var host = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 4, 16, 16), BackColor = Theme.Surface };
+        host.Controls.Add(_originalBox);
 
-        _originalCard.Controls.Add(origPad);
-        _originalCard.Controls.Add(origDiv);
-        _originalCard.Controls.Add(origHeader);
+        pane.Controls.Add(host);
+        pane.Controls.Add(header);
+        return pane;
+    }
 
-        // ===== ACTION BAR =====
-        _actionBar = new SurfaceCard
+    private SpinePanel BuildSpine()
+    {
+        var spine = new SpinePanel
         {
-            FillColor = Theme.Surface2,
-            FillColor2 = Theme.Surface3,
-            BorderColor = Theme.Border,
-            CornerRadius = Theme.CornerRadiusLg,
-            Dock = DockStyle.Top,
-            Height = 56,
-            Padding = new Padding(12, 10, 12, 10),
-            Margin = new Padding(0, 12, 0, 0),
-        };
-        _splitBtn = new SplitActionButton
-        {
-            ActionLabel = "Process",
-            ModelName = "claude-opus-4.6-1m",
-        };
-        _splitBtn.ModelClicked += OnModelPickerClicked;
-        _splitBtn.ActionClicked += OnProcessClicked;
-        _splitBtn.SizeChanged += (_, _) => PositionSplitButton();
-        _actionBar.Controls.Add(_splitBtn);
-        _actionBar.SizeChanged += (_, _) => PositionSplitButton();
-
-        // ===== RESULT CARD =====
-        _resultCard = new SurfaceCard
-        {
-            FillColor = Theme.Surface2,
-            BorderColor = Theme.Border,
-            CornerRadius = Theme.CornerRadiusLg,
             Dock = DockStyle.Fill,
+            BackColor = Theme.Surface,
+            Padding = new Padding(14),
+            Margin = new Padding(0),
+        };
+
+        _rewriteBtn = new SpineDropdownButton
+        {
+            Glyph = "✨",
+            Title = "Rewrite",
+            Subtitle = _currentTone,
+            Active = true,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 6),
+        };
+        _rewriteBtn.Clicked += OnRewriteClicked;
+
+        _translateBtn = new SpineDropdownButton
+        {
+            Glyph = "🌐",
+            Title = "Translate",
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 6),
+        };
+        _translateBtn.Clicked += OnTranslateClicked;
+
+        _customBtn = new SpineDropdownButton
+        {
+            Glyph = "⚡",
+            Title = "Custom",
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0, 0, 0, 6),
+        };
+        _customBtn.Clicked += OnCustomClicked;
+
+        _modelBtn = new SpineDropdownButton
+        {
+            Glyph = "⚡",
+            Title = string.IsNullOrEmpty(_currentModel) ? "Loading…" : _currentModel,
+            ShowCaret = true,
+            Active = false,
+            Dock = DockStyle.Fill,
+            Margin = new Padding(0),
+        };
+        _modelBtn.Clicked += OnModelClicked;
+
+        _transformBtn = new TransformButton
+        {
+            Verb = "Process",
+            Dock = DockStyle.Bottom,
+            Height = 104,
+            Margin = new Padding(0),
+        };
+        _transformBtn.Clicked += async (_, _) => await ExecuteCurrentRequestAsync(false);
+
+        var grid = new TableLayoutPanel
+        {
+            Dock = DockStyle.Fill,
+            ColumnCount = 1,
+            BackColor = Theme.Surface,
+            Margin = new Padding(0),
             Padding = new Padding(0),
-            Margin = new Padding(0, 12, 0, 0),
-            MinimumSize = new Size(0, 200),
         };
-        var resHeader = new Panel
+        grid.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+
+        int row = 0;
+        void AddRow(Control c, int height)
         {
-            Dock = DockStyle.Top,
-            Height = 32,
-            BackColor = Color.Transparent,
+            grid.RowStyles.Add(new RowStyle(SizeType.Absolute, height));
+            grid.Controls.Add(c, 0, row);
+            row++;
+        }
+
+        AddRow(MakeCaption("MODE"), 22);
+        AddRow(_rewriteBtn, 60); // taller: hosts the tone subtitle line
+        AddRow(_translateBtn, 50);
+        AddRow(_customBtn, 50);
+        AddRow(MakeDivider(), 15);
+        AddRow(MakeCaption("MODEL"), 22);
+        AddRow(_modelBtn, 46);
+        grid.RowStyles.Add(new RowStyle(SizeType.Percent, 100)); // spacer pushes content up
+        grid.RowCount = row + 1;
+
+        // Fill first (back), then bottom (front) so the grid avoids the button.
+        spine.Controls.Add(grid);
+        spine.Controls.Add(_transformBtn);
+        return spine;
+    }
+
+    private Panel BuildResultPane()
+    {
+        var pane = new Panel { Dock = DockStyle.Fill, BackColor = Theme.Surface, Margin = new Padding(0) };
+
+        var header = BuildPaneHeader("RESULT");
+
+        _resultBox = new RichTextBox
+        {
+            ReadOnly = true,
+            WordWrap = true,
+            DetectUrls = false,
+            ScrollBars = RichTextBoxScrollBars.Vertical,
+            BorderStyle = BorderStyle.None,
+            BackColor = Theme.Surface,
+            ForeColor = Theme.TextMuted,
+            Font = new Font(Theme.FontFamilyFallback, 10.5f),
+            Dock = DockStyle.Fill,
+            Text = ResultPlaceholder,
         };
-        var resLabel = new Label
+        var host = new Panel { Dock = DockStyle.Fill, Padding = new Padding(16, 4, 16, 16), BackColor = Theme.Surface };
+        host.Controls.Add(_resultBox);
+
+        pane.Controls.Add(host);
+        pane.Controls.Add(header);
+        return pane;
+    }
+
+    private Panel BuildFooter()
+    {
+        var footer = new Panel { Dock = DockStyle.Bottom, Height = 52, BackColor = Theme.Surface };
+        var topBorder = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border };
+
+        var rowPanel = new TableLayoutPanel
         {
-            Text = "✨  AI Result",
-            ForeColor = Theme.TextDim,
-            Font = Theme.SmallBold(),
-            AutoSize = true,
-            Location = new Point(14, 9),
-            BackColor = Color.Transparent,
+            Dock = DockStyle.Fill,
+            ColumnCount = 2,
+            RowCount = 1,
+            BackColor = Theme.Surface,
+            Padding = new Padding(14, 0, 14, 0),
+            Margin = new Padding(0),
         };
-        _resultLive = new Label
+        rowPanel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent, 100));
+        rowPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
+        rowPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
+
+        _footerTiming = new Label
         {
-            Text = "",
+            Text = string.Empty,
             ForeColor = Theme.Success,
             Font = Theme.Small(),
             AutoSize = true,
+            Anchor = AnchorStyles.None,
+            Margin = new Padding(0, 0, 12, 0),
             BackColor = Color.Transparent,
-            Visible = false,
         };
-        resHeader.Controls.Add(resLabel);
-        resHeader.Controls.Add(_resultLive);
-        // Pin _resultLive to the right edge of the header (Anchor doesn't play
-        // well with AutoSize labels, so reposition manually).
-        void PositionLive()
-        {
-            if (_resultLive.IsDisposed) return;
-            _resultLive.Location = new Point(resHeader.ClientSize.Width - _resultLive.Width - 14, 9);
-        }
-        resHeader.SizeChanged += (_, _) => PositionLive();
-        _resultLive.SizeChanged += (_, _) => PositionLive();
-        _resultLive.VisibleChanged += (_, _) => PositionLive();
-        var resDiv = new Panel { Dock = DockStyle.Top, Height = 1, BackColor = Theme.Border };
+        var regen = MakeGhostBtn("↻  Regenerate", async () => await ExecuteCurrentRequestAsync(true));
+        regen.Anchor = AnchorStyles.None;
+        regen.Margin = new Padding(0);
 
-        _resultBox = new TextBox
+        var leftCluster = new FlowLayoutPanel
         {
-            Multiline = true,
-            WordWrap = true,
-            ScrollBars = ScrollBars.Vertical,
-            BorderStyle = BorderStyle.None,
-            BackColor = Theme.Surface2,
-            ForeColor = Theme.Text,
-            ReadOnly = true,
-            AcceptsReturn = true,
-            Font = new Font(Theme.FontFamilyFallback, 10.5f),
-            Dock = DockStyle.Fill,
-        };
-        var resPad = new Panel { Dock = DockStyle.Fill, Padding = new Padding(14, 8, 14, 8), BackColor = Color.Transparent };
-        resPad.Controls.Add(_resultBox);
-
-        _resultTools = new FlowLayoutPanel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 44,
-            BackColor = Theme.Surface3,
+            AutoSize = true,
+            AutoSizeMode = AutoSizeMode.GrowAndShrink,
             FlowDirection = FlowDirection.LeftToRight,
             WrapContents = false,
-            Padding = new Padding(0),
+            Anchor = AnchorStyles.Left,
+            BackColor = Color.Transparent,
             Margin = new Padding(0),
-            Visible = false, // not used; replaced by _resultToolsPanel
         };
-        var divBeforeTools = new Panel { Dock = DockStyle.Bottom, Height = 1, BackColor = Theme.Border };
+        leftCluster.Controls.Add(_footerTiming);
+        leftCluster.Controls.Add(regen);
 
-        // Regular panel where we can dock children left/right reliably.
-        var resultToolsPanel = new Panel
-        {
-            Dock = DockStyle.Bottom,
-            Height = 48,
-            BackColor = Theme.Surface3,
-            Padding = new Padding(8, 6, 8, 6),
-        };
+        var accept = MakeAccentBtn("✓  Accept & Copy", AcceptAndCopy);
+        accept.Anchor = AnchorStyles.None;
+        accept.Margin = new Padding(0);
 
-        var regenBtn = MakeToolBtn("↻  Regenerate", async () => await ExecuteCurrentRequestAsync(true));
-        regenBtn.Dock = DockStyle.Left;
-        regenBtn.AutoSize = true;
-        regenBtn.Padding = new Padding(10, 6, 10, 6);
+        rowPanel.Controls.Add(leftCluster, 0, 0);
+        rowPanel.Controls.Add(accept, 1, 0);
 
-        var acceptBtn = MakeAccentBtn("✓  Accept & Copy", () =>
-        {
-            if (!string.IsNullOrEmpty(_processedText))
-            {
-                Clipboard.SetText(_processedText);
-                AcceptedAndCopied?.Invoke(this, _processedText);
-            }
-        });
-        acceptBtn.Dock = DockStyle.Right;
-        acceptBtn.AutoSize = true;
-        acceptBtn.Padding = new Padding(14, 6, 14, 6);
-
-        // Add Right first so Left doesn't fill it.
-        resultToolsPanel.Controls.Add(acceptBtn);
-        resultToolsPanel.Controls.Add(regenBtn);
-
-        _resultCard.Controls.Add(resPad);
-        _resultCard.Controls.Add(divBeforeTools);
-        _resultCard.Controls.Add(resultToolsPanel);
-        _resultCard.Controls.Add(resDiv);
-        _resultCard.Controls.Add(resHeader);
-
-        // Add in z-order: result first (Fill), then bars on top
-        Controls.Add(_resultCard);
-        Controls.Add(_actionBar);
-        Controls.Add(_originalCard);
-        Controls.Add(_toolbarCard);
-        ResumeLayout(true);
+        // Fill first (back), then top border (front).
+        footer.Controls.Add(rowPanel);
+        footer.Controls.Add(topBorder);
+        return footer;
     }
 
-    private void BuildCustomActionChips()
+    /// <summary>Builds a 34px pane header with a left caption and an optional right-aligned control.</summary>
+    private static Panel BuildPaneHeader(string title, Control? rightControl = null)
     {
-        _actionGroup.ClearChips();
-        var actions = ConfigManager.GetCustomActions();
-        bool first = true;
-        foreach (var a in actions)
+        var header = new Panel { Dock = DockStyle.Top, Height = 34, BackColor = Theme.Surface };
+        var label = new Label
         {
-            _actionGroup.AddChip(a.Name, "📝", active: first);
-            first = false;
+            Text = title,
+            ForeColor = Theme.TextDim,
+            Font = Theme.SmallBold(),
+            AutoSize = true,
+            BackColor = Color.Transparent,
+        };
+        header.Controls.Add(label);
+        if (rightControl != null) header.Controls.Add(rightControl);
+
+        void DoLayout()
+        {
+            if (label.IsDisposed) return;
+            label.Location = new Point(16, (header.Height - label.Height) / 2);
+            if (rightControl != null && !rightControl.IsDisposed)
+                rightControl.Location = new Point(
+                    header.ClientSize.Width - rightControl.Width - 14,
+                    (header.Height - rightControl.Height) / 2);
         }
-        _actionGroup.AddChip("Manage…", "⚙", dashed: true);
+        header.SizeChanged += (_, _) => DoLayout();
+        label.SizeChanged += (_, _) => DoLayout();
+        if (rightControl != null) rightControl.SizeChanged += (_, _) => DoLayout();
+        header.HandleCreated += (_, _) => DoLayout();
+        return header;
     }
 
-    public void RefreshCustomActions()
+    private static Label MakeCaption(string text) => new()
     {
-        BuildCustomActionChips();
-    }
+        Text = text,
+        ForeColor = Theme.TextMuted,
+        Font = Theme.SmallBold(),
+        Dock = DockStyle.Fill,
+        TextAlign = ContentAlignment.MiddleLeft,
+        BackColor = Color.Transparent,
+        Margin = new Padding(2, 0, 0, 2),
+    };
 
-    private Control MakeToolBtn(string text, Action onClick)
+    private static Panel MakeDivider() => new()
+    {
+        Height = 1,
+        BackColor = Theme.Border,
+        Anchor = AnchorStyles.Left | AnchorStyles.Right,
+        Margin = new Padding(2, 0, 2, 0),
+    };
+
+    private Button MakeGhostBtn(string text, Action onClick)
     {
         var b = new Button
         {
@@ -381,12 +403,12 @@ public class ProcessPane : UserControl
             ForeColor = Theme.TextDim,
             Font = Theme.Small(),
             AutoSize = true,
-            Margin = new Padding(0, 0, 4, 0),
-            Padding = new Padding(8, 4, 8, 4),
+            Padding = new Padding(10, 6, 10, 6),
             Cursor = Cursors.Hand,
+            Margin = new Padding(0),
         };
         b.FlatAppearance.BorderSize = 0;
-        b.FlatAppearance.MouseOverBackColor = Theme.Surface;
+        b.FlatAppearance.MouseOverBackColor = Theme.Surface2;
         b.MouseEnter += (_, _) => b.ForeColor = Theme.Text;
         b.MouseLeave += (_, _) => b.ForeColor = Theme.TextDim;
         b.Click += (_, _) => onClick();
@@ -398,14 +420,15 @@ public class ProcessPane : UserControl
         var b = new Button
         {
             Text = text,
+            UseMnemonic = false, // keep the literal "&" in "Accept & Copy"
             FlatStyle = FlatStyle.Flat,
             BackColor = Theme.Accent,
             ForeColor = Theme.AccentInk,
             Font = Theme.BodyBold(),
             AutoSize = true,
-            Padding = new Padding(12, 4, 12, 4),
+            Padding = new Padding(14, 6, 14, 6),
             Cursor = Cursors.Hand,
-            Margin = new Padding(8, 0, 4, 0),
+            Margin = new Padding(0),
         };
         b.FlatAppearance.BorderSize = 0;
         b.FlatAppearance.MouseOverBackColor = Theme.Accent2;
@@ -413,144 +436,132 @@ public class ProcessPane : UserControl
         return b;
     }
 
-    private void PositionSplitButton()
-    {
-        if (_splitBtn == null || _actionBar == null) return;
-        _splitBtn.Top = (_actionBar.ClientSize.Height - _splitBtn.Height) / 2;
-        _splitBtn.Left = _actionBar.ClientSize.Width - _splitBtn.Width - 12;
-    }
+    // ============================================================ Behaviour ===
 
-    // ============== Mode handling ==============
-    private void OnModeChanged(object? sender, EventArgs e)
+    private void SetActiveMode(ProcessMode m)
     {
-        var sel = _modeGroup.SelectedChip?.Text;
-        if (sel == "Translate") ApplyMode(ProcessMode.Translate);
-        else if (sel == "Custom") ApplyMode(ProcessMode.Custom);
-        else ApplyMode(ProcessMode.Rewrite);
-    }
-
-    private void ApplyMode(ProcessMode mode)
-    {
-        _currentMode = mode;
-        _toolbarFlow.SuspendLayout();
-        _toneGroup.Visible = mode == ProcessMode.Rewrite || mode == ProcessMode.Translate;
-        _languageGroup.Visible = mode == ProcessMode.Translate;
-        _actionGroup.Visible = mode == ProcessMode.Custom;
-        _toolbarFlow.ResumeLayout(true);
-        UpdateToolbarHeight();
-
-        _splitBtn.ActionLabel = mode switch
-        {
-            ProcessMode.Translate => "Translate",
-            ProcessMode.Custom => "Process",
-            _ => "Process"
-        };
+        _currentMode = m;
+        _rewriteBtn.Active = m == ProcessMode.Rewrite;
+        _translateBtn.Active = m == ProcessMode.Translate;
+        _customBtn.Active = m == ProcessMode.Custom;
+        _transformBtn.Verb = m == ProcessMode.Translate ? "Translate" : "Process";
+        RefreshModeLabels();
         UpdateStatusModeChip();
+        _transformBtn.Invalidate();
     }
 
     /// <summary>
-    /// Manually compute the required toolbar height so wrapped chip rows are visible.
-    /// FlowLayoutPanel doesn't expose its actual wrapped height through AutoSize +
-    /// Dock=Top reliably, so we measure each visible row and add them up.
+    /// Updates each mode button's label so only the ACTIVE mode shows its chosen value
+    /// (tone / language / action); the inactive modes show their generic word. This is how
+    /// you "stop translating": switch to Rewrite (or Custom) and the language label clears
+    /// back to "Translate".
     /// </summary>
-    private void UpdateToolbarHeight()
+    private void RefreshModeLabels()
     {
-        if (_toolbarFlow == null || _toolbarCard == null) return;
-        if (_toolbarFlow.Width <= 0) return;
+        _rewriteBtn.Glyph = "✨";
+        _rewriteBtn.Title = "Rewrite";
+        _rewriteBtn.Subtitle = _currentTone;
 
-        int x = 0;
-        int rowHeight = 0;
-        int totalHeight = 0;
-        int availableWidth = _toolbarFlow.ClientSize.Width;
+        _translateBtn.Glyph = "🌐";
+        _translateBtn.Title = _currentMode == ProcessMode.Translate ? _currentLanguage : "Translate";
 
-        foreach (Control c in _toolbarFlow.Controls)
+        if (_currentMode == ProcessMode.Custom && _currentAction != null)
         {
-            if (!c.Visible) continue;
-            int w = c.Width + c.Margin.Horizontal;
-            int h = c.Height + c.Margin.Vertical;
-            if (x > 0 && x + w > availableWidth)
+            _customBtn.Glyph = "📝";
+            _customBtn.Title = _currentAction.Name;
+        }
+        else
+        {
+            _customBtn.Glyph = "⚡";
+            _customBtn.Title = "Custom";
+        }
+
+        _rewriteBtn.Invalidate();
+        _translateBtn.Invalidate();
+        _customBtn.Invalidate();
+    }
+
+    private static ContextMenuStrip NewMenu() => AIPaste.UI.Controls.ThemedMenu.Create();
+
+    private void OnRewriteClicked(object? sender, EventArgs e)
+    {
+        SetActiveMode(ProcessMode.Rewrite);
+        var menu = NewMenu();
+        foreach (var tone in new[] { "Professional", "Casual", "Informative", "Enthusiastic" })
+        {
+            var captured = tone;
+            var item = new ToolStripMenuItem(tone) { ForeColor = Theme.Text, Checked = tone == _currentTone };
+            item.Click += (_, _) =>
             {
-                // Wrap to next row
-                totalHeight += rowHeight;
-                x = 0;
-                rowHeight = 0;
-            }
-            x += w;
-            rowHeight = Math.Max(rowHeight, h);
+                _currentTone = captured;
+                RefreshModeLabels();
+                UpdateStatusModeChip();
+            };
+            menu.Items.Add(item);
         }
-        totalHeight += rowHeight;
-
-        int target = totalHeight + _toolbarCard.Padding.Vertical;
-        target = Math.Max(target, 56);
-        if (_toolbarCard.Height != target)
-            _toolbarCard.Height = target;
+        menu.Show(_rewriteBtn.PointToScreen(new Point(0, _rewriteBtn.Height)));
     }
 
-    protected override void OnSizeChanged(EventArgs e)
+    private void OnTranslateClicked(object? sender, EventArgs e)
     {
-        base.OnSizeChanged(e);
-        UpdateToolbarHeight();
-    }
+        var menu = NewMenu();
+        bool translating = _currentMode == ProcessMode.Translate;
 
-    private void UpdateStatusModeChip()
-    {
-        switch (_currentMode)
+        // Default value — the "off" entry, checked when nothing is being translated.
+        // Selecting it stops translating right from this dropdown (no need to click Rewrite).
+        var noneItem = new ToolStripMenuItem("Don't translate") { ForeColor = Theme.Text, Checked = !translating };
+        noneItem.Click += (_, _) => SetActiveMode(ProcessMode.Rewrite);
+        menu.Items.Add(noneItem);
+        menu.Items.Add(new ToolStripSeparator());
+
+        foreach (var lang in new[] { "Hindi", "Gujarati" })
         {
-            case ProcessMode.Rewrite:
-                _setStatusModeChip(_toneGroup.Selected);
-                _setStatusHint("Press Enter to process");
-                break;
-            case ProcessMode.Translate:
-                _setStatusModeChip($"{_languageGroup.Selected} · {_toneGroup.Selected}");
-                _setStatusHint("Press Enter to translate");
-                break;
-            case ProcessMode.Custom:
-                _setStatusModeChip(_actionGroup.Selected);
-                _setStatusHint("Press Enter to run");
-                break;
-        }
-    }
-
-    // ============== Models ==============
-    private async Task LoadModelsAsync()
-    {
-        try
-        {
-            if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
+            var captured = lang;
+            var item = new ToolStripMenuItem(lang) { ForeColor = Theme.Text, Checked = translating && lang == _currentLanguage };
+            item.Click += (_, _) =>
             {
-                if (!CopilotAuth.IsSignedIn)
-                {
-                    _splitBtn.ModelName = "Sign in to select";
-                    _setStatusModel("Sign in to select a model");
-                    return;
-                }
-                var models = await ConfigManager.GetCopilotModelsAsync();
-                if (models != null && models.Count > 0)
-                {
-                    string preferred = ConfigManager.GetCopilotPreferredModel();
-                    var match = models.FirstOrDefault(m => m.Id == preferred) ?? models.First();
-                    _splitBtn.ModelName = match.Id;
-                    _setStatusModel(match.Id);
-                    return;
-                }
-            }
-            // Custom provider — show deployment id
-            var dep = ConfigManager.GetCustomDeploymentId();
-            if (!string.IsNullOrEmpty(dep))
-            {
-                _splitBtn.ModelName = dep;
-                _setStatusModel(dep);
-            }
+                _currentLanguage = captured;
+                SetActiveMode(ProcessMode.Translate);
+            };
+            menu.Items.Add(item);
         }
-        catch
-        {
-            // Silent — status bar will show "(no model)"
-        }
+        menu.Show(_translateBtn.PointToScreen(new Point(0, _translateBtn.Height)));
     }
 
-    private void OnModelPickerClicked(object? sender, EventArgs e)
+    private void OnCustomClicked(object? sender, EventArgs e)
     {
-        // Show a small popup menu of available models.
+        var menu = NewMenu();
+        bool usingCustom = _currentMode == ProcessMode.Custom;
+
+        // Default value — the "off" entry, checked when no custom action is running.
+        // Selecting it stops using a custom action straight from this dropdown.
+        var noneItem = new ToolStripMenuItem("No custom action") { ForeColor = Theme.Text, Checked = !usingCustom };
+        noneItem.Click += (_, _) => SetActiveMode(ProcessMode.Rewrite);
+        menu.Items.Add(noneItem);
+
+        var actions = ConfigManager.GetCustomActions();
+        if (actions.Count > 0) menu.Items.Add(new ToolStripSeparator());
+        foreach (var a in actions)
+        {
+            var captured = a;
+            var item = new ToolStripMenuItem(a.Name) { ForeColor = Theme.Text, Checked = usingCustom && a.Name == _currentAction?.Name };
+            item.Click += (_, _) =>
+            {
+                _currentAction = captured;
+                SetActiveMode(ProcessMode.Custom);
+            };
+            menu.Items.Add(item);
+        }
+
+        menu.Items.Add(new ToolStripSeparator());
+        var manage = new ToolStripMenuItem("⚙  Manage actions…") { ForeColor = Theme.Text };
+        manage.Click += (_, _) => _onRequestManageActions();
+        menu.Items.Add(manage);
+        menu.Show(_customBtn.PointToScreen(new Point(0, _customBtn.Height)));
+    }
+
+    private void OnModelClicked(object? sender, EventArgs e)
+    {
         if (ConfigManager.GetProvider() != AIProvider.GitHubCopilot) return;
         _ = ShowModelPickerAsync();
     }
@@ -561,33 +572,121 @@ public class ProcessPane : UserControl
         try { models = await ConfigManager.GetCopilotModelsAsync(); } catch { }
         if (models == null || models.Count == 0) return;
 
-        var menu = new ContextMenuStrip
-        {
-            BackColor = Theme.Surface,
-            ForeColor = Theme.Text,
-            ShowImageMargin = false,
-            Renderer = new DarkMenuRenderer(),
-        };
+        var menu = NewMenu();
         foreach (var m in models.OrderBy(m => m.Name))
         {
-            var item = new ToolStripMenuItem(m.Id) { Tag = m.Id, ForeColor = Theme.Text };
-            if (m.Id == _splitBtn.ModelName) item.Checked = true;
+            var captured = m;
+            var item = new ToolStripMenuItem(m.Id) { Tag = m.Id, ForeColor = Theme.Text, Checked = m.Id == _currentModel };
             item.Click += (_, _) =>
             {
-                _splitBtn.ModelName = m.Id;
-                _setStatusModel(m.Id);
+                _currentModel = captured.Id;
+                _modelBtn.Title = _currentModel;
+                _setStatusModel(_currentModel);
+                _modelBtn.Invalidate();
             };
             menu.Items.Add(item);
         }
-        var screenPt = _splitBtn.PointToScreen(new Point(0, _splitBtn.Height + 4));
-        menu.Show(screenPt);
+        menu.Show(_modelBtn.PointToScreen(new Point(0, _modelBtn.Height)));
     }
 
-    // ============== Pre-warm + Process ==============
-    private async void OnProcessClicked(object? sender, EventArgs e)
+    private void UpdateStatusModeChip()
     {
-        await ExecuteCurrentRequestAsync(false);
+        switch (_currentMode)
+        {
+            case ProcessMode.Rewrite:
+                _setStatusModeChip(_currentTone);
+                _setStatusHint("Press Enter to process");
+                break;
+            case ProcessMode.Translate:
+                _setStatusModeChip(_currentLanguage);
+                _setStatusHint("Press Enter to translate");
+                break;
+            case ProcessMode.Custom:
+                _setStatusModeChip(_currentAction?.Name ?? "");
+                _setStatusHint("Press Enter to run");
+                break;
+        }
     }
+
+    public void RefreshCustomActions()
+    {
+        var actions = ConfigManager.GetCustomActions();
+        var cur = _currentAction;
+        bool stillExists = cur != null && actions.Any(a => a.Name == cur.Name);
+        if (stillExists) return;
+
+        _currentAction = actions.FirstOrDefault();
+        if (_currentMode == ProcessMode.Custom)
+        {
+            if (_currentAction != null)
+            {
+                _customBtn.Glyph = "📝";
+                _customBtn.Title = _currentAction.Name;
+            }
+            else
+            {
+                _customBtn.Glyph = "⚡";
+                _customBtn.Title = "Custom";
+            }
+            _customBtn.Invalidate();
+            UpdateStatusModeChip();
+        }
+    }
+
+    private void AcceptAndCopy()
+    {
+        if (!string.IsNullOrEmpty(_processedText))
+        {
+            Clipboard.SetText(_processedText);
+            AcceptedAndCopied?.Invoke(this, _processedText);
+        }
+    }
+
+    // =============================================================== Models ===
+
+    private async Task LoadModelsAsync()
+    {
+        try
+        {
+            if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
+            {
+                if (!CopilotAuth.IsSignedIn)
+                {
+                    _currentModel = string.Empty;
+                    _modelBtn.Title = "Sign in to select";
+                    _setStatusModel("Sign in to select a model");
+                    _modelBtn.Invalidate();
+                    return;
+                }
+                var models = await ConfigManager.GetCopilotModelsAsync();
+                if (models != null && models.Count > 0)
+                {
+                    string preferred = ConfigManager.GetCopilotPreferredModel();
+                    var match = models.FirstOrDefault(m => m.Id == preferred) ?? models.First();
+                    _currentModel = match.Id;
+                    _modelBtn.Title = match.Id;
+                    _setStatusModel(match.Id);
+                    _modelBtn.Invalidate();
+                    return;
+                }
+            }
+            // Custom provider — show deployment id.
+            var dep = ConfigManager.GetCustomDeploymentId();
+            if (!string.IsNullOrEmpty(dep))
+            {
+                _currentModel = dep;
+                _modelBtn.Title = dep;
+                _setStatusModel(dep);
+                _modelBtn.Invalidate();
+            }
+        }
+        catch
+        {
+            // Silent — status bar will show "(no model)".
+        }
+    }
+
+    // ============================================================== Process ===
 
     public async Task ExecuteCurrentRequestAsync(bool isRetry)
     {
@@ -597,11 +696,12 @@ public class ProcessPane : UserControl
             _onRequestSettings();
             return;
         }
-        _resultLive.Text = "Streaming";
-        _resultLive.Visible = true;
-        _resultBox.Text = isRetry ? string.Empty : "Processing…";
 
+        _resultBox.ForeColor = Theme.Text;
+        _resultBox.Text = isRetry ? string.Empty : "Processing…";
+        _footerTiming.Text = string.Empty;
         _setStatusTiming(string.Empty);
+
         var sw = System.Diagnostics.Stopwatch.StartNew();
         try
         {
@@ -611,24 +711,22 @@ public class ProcessPane : UserControl
             {
                 case ProcessMode.Rewrite:
                     systemPrompt = "You are a helpful assistant that rewrites text based on the specified tone. Only return the rewritten text, nothing else.";
-                    userPrompt = $"Rewrite the following text in a {_toneGroup.Selected} tone:\n\n\"{_originalText}\"";
+                    userPrompt = $"Rewrite the following text in a {_currentTone} tone:\n\n\"{_originalText}\"";
                     break;
                 case ProcessMode.Translate:
                     systemPrompt = "You are a helpful assistant that translates text. Only return the translated text, nothing else.";
-                    userPrompt = $"Translate the following text to {_languageGroup.Selected} in a {_toneGroup.Selected} tone:\n\n\"{_originalText}\"";
+                    userPrompt = $"Translate the following text to {_currentLanguage} in a {_currentTone} tone:\n\n\"{_originalText}\"";
                     break;
                 default:
-                    var act = ConfigManager.GetCustomActions().FirstOrDefault(a => a.Name == _actionGroup.Selected);
-                    if (act == null)
+                    if (_currentAction == null)
                     {
-                        _resultBox.Text = "No custom action selected.";
-                        _resultLive.Visible = false;
+                        SetResultText("No custom action selected.");
                         return;
                     }
                     systemPrompt = "You are a helpful assistant that processes text based on the given instructions. Only return the processed result, nothing else.";
-                    userPrompt = act.Prompt.Contains("{text}")
-                        ? act.Prompt.Replace("{text}", _originalText)
-                        : $"{act.Prompt}\n\nText to process: \"{_originalText}\"";
+                    userPrompt = _currentAction.Prompt.Contains("{text}")
+                        ? _currentAction.Prompt.Replace("{text}", _originalText)
+                        : $"{_currentAction.Prompt}\n\nText to process: \"{_originalText}\"";
                     break;
             }
 
@@ -637,19 +735,25 @@ public class ProcessPane : UserControl
                 : ExecuteCustomProvider(systemPrompt, userPrompt);
 
             _processedText = result;
-            _resultLive.Visible = false;
         }
         catch (Exception ex)
         {
-            _resultBox.Text = $"Error: {ex.Message}";
+            SetResultText($"Error: {ex.Message}");
             _processedText = string.Empty;
-            _resultLive.Visible = false;
         }
         finally
         {
             sw.Stop();
-            _setStatusTiming(FormatElapsed(sw.Elapsed));
+            var elapsed = FormatElapsed(sw.Elapsed);
+            _setStatusTiming(elapsed);
+            _footerTiming.Text = string.IsNullOrEmpty(_processedText) ? string.Empty : $"⏱ {elapsed}";
         }
+    }
+
+    private void SetResultText(string text)
+    {
+        _resultBox.ForeColor = Theme.Text;
+        _resultBox.Text = text;
     }
 
     private static string FormatElapsed(TimeSpan t)
@@ -662,6 +766,7 @@ public class ProcessPane : UserControl
 
     private async Task<string> ExecuteCopilotAsync(string systemPrompt, string userPrompt)
     {
+        _resultBox.ForeColor = Theme.Text;
         _resultBox.Text = string.Empty;
         var sb = new System.Text.StringBuilder();
 
@@ -681,7 +786,7 @@ public class ProcessPane : UserControl
         }
 
         return await CopilotApiClient.StreamChatAsync(
-            _splitBtn.ModelName, systemPrompt, userPrompt, OnDelta);
+            _currentModel, systemPrompt, userPrompt, OnDelta);
     }
 
     private string ExecuteCustomProvider(string systemPrompt, string userPrompt)
@@ -704,7 +809,7 @@ public class ProcessPane : UserControl
         };
         Response<ChatCompletions> response = client.GetChatCompletions(options);
         var text = response.Value.Choices[0].Message.Content ?? string.Empty;
-        _resultBox.Text = NormalizeLineEndings(text);
+        SetResultText(NormalizeLineEndings(text));
         return text;
     }
 
@@ -719,35 +824,17 @@ public class ProcessPane : UserControl
         return s.Replace("\r\n", "\n").Replace("\r", "\n").Replace("\n", "\r\n");
     }
 
-    private void FlashStatus(string text)
+    /// <summary>A spine panel that paints 1px left and right borders.</summary>
+    private sealed class SpinePanel : Panel
     {
-        var prev = string.Empty;
-        _setStatusHint(text);
-        var t = new System.Windows.Forms.Timer { Interval = 1500 };
-        t.Tick += (_, _) => { t.Stop(); t.Dispose(); UpdateStatusModeChip(); };
-        t.Start();
-    }
+        public SpinePanel() { ResizeRedraw = true; }
 
-    /// <summary>Custom dark renderer for the model context menu.</summary>
-    private sealed class DarkMenuRenderer : ToolStripProfessionalRenderer
-    {
-        public DarkMenuRenderer() : base(new DarkColors()) { RoundedEdges = true; }
-        protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e)
+        protected override void OnPaint(PaintEventArgs e)
         {
-            e.TextColor = e.Item.Selected ? Theme.AccentInk : Theme.Text;
-            base.OnRenderItemText(e);
-        }
-        private class DarkColors : ProfessionalColorTable
-        {
-            public override Color MenuItemSelected => Theme.Accent;
-            public override Color MenuItemBorder => Theme.Border;
-            public override Color ToolStripDropDownBackground => Theme.Surface;
-            public override Color ImageMarginGradientBegin => Theme.Surface;
-            public override Color ImageMarginGradientMiddle => Theme.Surface;
-            public override Color ImageMarginGradientEnd => Theme.Surface;
-            public override Color MenuBorder => Theme.Border;
-            public override Color MenuStripGradientBegin => Theme.Surface;
-            public override Color MenuStripGradientEnd => Theme.Surface;
+            base.OnPaint(e);
+            using var pen = new Pen(Theme.Border, 1f);
+            e.Graphics.DrawLine(pen, 0, 0, 0, Height - 1);
+            e.Graphics.DrawLine(pen, Width - 1, 0, Width - 1, Height - 1);
         }
     }
 }

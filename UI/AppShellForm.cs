@@ -36,7 +36,7 @@ public class AppShellForm : Form
         if (!IsHandleCreated) return;
         try
         {
-            int useDark = 1;
+            int useDark = Theme.IsDark ? 1 : 0;
             if (DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE, ref useDark, sizeof(int)) != 0)
                 DwmSetWindowAttribute(Handle, DWMWA_USE_IMMERSIVE_DARK_MODE_OLD, ref useDark, sizeof(int));
 
@@ -90,6 +90,14 @@ public class AppShellForm : Form
     {
         base.OnHandleCreated(e);
         ApplyDarkTitleBar();
+    }
+
+    protected override void OnShown(EventArgs e)
+    {
+        base.OnShown(e);
+        // Put keyboard focus on the Rewrite button as soon as the popup opens.
+        if (_rail.Selected == AppPane.Process)
+            BeginInvoke((Action)(() => _processPane?.FocusPrimary()));
     }
 
     private void BuildLayout()
@@ -241,6 +249,7 @@ public class AppShellForm : Form
 
             case AppPane.Settings:
                 _settingsPane = new SettingsPane(() => ShowPane(AppPane.Process)) { Dock = DockStyle.Fill };
+                _settingsPane.ThemeChanged += (_, _) => RebuildForTheme();
                 _settingsPane.Saved += (_, _) =>
                 {
                     _statusBar.Authenticated = ConfigManager.IsConfigComplete();
@@ -281,12 +290,41 @@ public class AppShellForm : Form
         _statusBar.ModelText = string.IsNullOrEmpty(dep) ? "(no model)" : dep;
     }
 
+    /// <summary>
+    /// Rebuilds the whole shell so the open window re-skins instantly when the theme changes.
+    /// </summary>
+    private void RebuildForTheme()
+    {
+        SuspendLayout();
+        Controls.Clear();
+        _processPane = null;
+        _settingsPane = null;
+        _customPane = null;
+        BackColor = Theme.Bg;
+        ForeColor = Theme.Text;
+        Font = Theme.Body();
+        BuildLayout();
+        ShowPane(AppPane.Settings);   // stay on the Settings screen so the user sees the switch
+        ResumeLayout(true);
+        ApplyDarkTitleBar();          // already reads Theme.IsDark -> sets light/dark OS title bar
+        Invalidate(true);
+    }
+
     private void OnGlobalKeyDown(object? sender, KeyEventArgs e)
     {
         if (e.KeyCode == Keys.Escape)
         {
             Close();
             e.Handled = true;
+            return;
+        }
+        // Enter anywhere on the Process pane runs the current transform (Rewrite/Translate/Custom).
+        if (e.KeyCode == Keys.Enter && !e.Control && !e.Alt && !e.Shift
+            && _rail.Selected == AppPane.Process && _processPane != null)
+        {
+            _ = _processPane.ExecuteCurrentRequestAsync(false);
+            e.Handled = true;
+            e.SuppressKeyPress = true;
             return;
         }
         if (e.Control && e.KeyCode == Keys.D1) { ShowPane(AppPane.Process); e.Handled = true; }

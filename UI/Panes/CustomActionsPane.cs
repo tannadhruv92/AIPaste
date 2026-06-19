@@ -372,7 +372,7 @@ public class CustomActionsPane : UserControl
 
             // Active row gets a distinctly brighter background.
             Color background = _active
-                ? Color.FromArgb(60, 45, 80)
+                ? Theme.AccentSelected
                 : (_hovered ? Theme.Surface3 : Theme.Surface2);
             using (var bg = new SolidBrush(background))
                 g.FillRectangle(bg, ClientRectangle);

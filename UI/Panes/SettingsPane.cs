@@ -33,8 +33,13 @@ public class SettingsPane : UserControl
 
     private AIProvider _selectedProvider;
 
+    private Button _themeSystemBtn = null!;
+    private Button _themeLightBtn = null!;
+    private Button _themeDarkBtn = null!;
+
     public event EventHandler? Saved;
     public event EventHandler? AuthChanged;
+    public event EventHandler? ThemeChanged;
 
     public SettingsPane(Action onClose)
     {
@@ -59,6 +64,27 @@ public class SettingsPane : UserControl
             Padding = new Padding(0),
             Margin = new Padding(0),
         };
+
+        // Appearance / theme switcher
+        stack.Controls.Add(MakeFieldLabel("Appearance"));
+        var themeRow = new FlowLayoutPanel
+        {
+            FlowDirection = FlowDirection.LeftToRight,
+            WrapContents = false,
+            AutoSize = true,
+            BackColor = Color.Transparent,
+            Width = 600,
+            Margin = new Padding(0, 4, 0, 18),
+            Padding = new Padding(0),
+        };
+        _themeSystemBtn = MakeThemeOption("🖥  System", ThemeMode.System);
+        _themeLightBtn = MakeThemeOption("☀  Light", ThemeMode.Light);
+        _themeDarkBtn = MakeThemeOption("🌙  Dark", ThemeMode.Dark);
+        themeRow.Controls.Add(_themeSystemBtn);
+        themeRow.Controls.Add(_themeLightBtn);
+        themeRow.Controls.Add(_themeDarkBtn);
+        stack.Controls.Add(themeRow);
+        RefreshThemeButtons(ConfigManager.GetThemeMode());
 
         // Provider cards
         stack.Controls.Add(MakeFieldLabel("AI Provider"));
@@ -118,7 +144,7 @@ public class SettingsPane : UserControl
             Text = string.Empty,
             ReadOnly = true,
             TextAlign = HorizontalAlignment.Center,
-            BackColor = Color.FromArgb(10, 10, 12),
+            BackColor = Theme.Surface3,
             ForeColor = Theme.Success,
             Font = Theme.Mono(),
             BorderStyle = BorderStyle.FixedSingle,
@@ -269,6 +295,52 @@ public class SettingsPane : UserControl
         Margin = new Padding(0, 0, 0, 6),
         BackColor = Color.Transparent,
     };
+
+    private Button MakeThemeOption(string text, ThemeMode mode)
+    {
+        var b = new Button
+        {
+            Text = text,
+            FlatStyle = FlatStyle.Flat,
+            Font = Theme.Body(),
+            AutoSize = false,
+            Size = new Size(128, 38),
+            Cursor = Cursors.Hand,
+            TextAlign = ContentAlignment.MiddleCenter,
+            Margin = new Padding(0, 0, 8, 0),
+            UseVisualStyleBackColor = false,
+        };
+        b.FlatAppearance.BorderSize = 1;
+        b.Click += (_, _) => OnThemeOptionClicked(mode);
+        return b;
+    }
+
+    /// <summary>Repaints the three theme options so the active one reads from the live Theme tokens.</summary>
+    private void RefreshThemeButtons(ThemeMode active)
+    {
+        StyleThemeOption(_themeSystemBtn, "🖥  System", ThemeMode.System, active);
+        StyleThemeOption(_themeLightBtn, "☀  Light", ThemeMode.Light, active);
+        StyleThemeOption(_themeDarkBtn, "🌙  Dark", ThemeMode.Dark, active);
+    }
+
+    private static void StyleThemeOption(Button b, string label, ThemeMode mode, ThemeMode active)
+    {
+        bool on = mode == active;
+        b.Text = on ? "✓  " + label : label;
+        b.Font = on ? Theme.BodyBold() : Theme.Body();
+        b.BackColor = on ? Theme.AccentSelected : Theme.Surface3;
+        b.ForeColor = on ? Theme.Accent : Theme.TextDim;
+        b.FlatAppearance.BorderColor = on ? Theme.Accent : Theme.Border;
+    }
+
+    private void OnThemeOptionClicked(ThemeMode mode)
+    {
+        if (ConfigManager.GetThemeMode() == mode) return;
+        ConfigManager.SetThemeMode(mode);
+        AIPaste.UI.Theme.ApplyMode(mode);
+        RefreshThemeButtons(mode);
+        ThemeChanged?.Invoke(this, EventArgs.Empty);
+    }
 
     private Button MakeMiniBtn(string text, Action onClick)
     {
@@ -525,7 +597,7 @@ public class SettingsPane : UserControl
         public bool Selected
         {
             get => _selected;
-            set { _selected = value; BorderColor = value ? Theme.Accent : Theme.Border; FillColor = value ? Color.FromArgb(255, 30, 25, 50) : Theme.Surface2; Invalidate(); }
+            set { _selected = value; BorderColor = value ? Theme.Accent : Theme.Border; FillColor = value ? Theme.AccentSelected : Theme.Surface2; Invalidate(); }
         }
 
         protected override void OnPaint(PaintEventArgs e)

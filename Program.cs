@@ -39,6 +39,7 @@ static class Program
         _pipeServerThread.Start();
         
         // Create main form
+        AIPaste.UI.Theme.ApplyMode(ConfigManager.GetThemeMode());
         var mainForm = new MainForm(true);
         
         try

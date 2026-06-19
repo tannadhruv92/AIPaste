@@ -1,39 +1,138 @@
 using System.Drawing;
+using Microsoft.Win32;
 
 namespace AIPaste.UI;
 
 /// <summary>
-/// Centralised colours, fonts and metrics for the redesigned dark theme.
-/// Mirrors the values from docs/proposals/final-design.html.
+/// Centralised colours, fonts and metrics for the indigo "Transform Studio" theme.
+/// Supports switchable Light/Dark palettes plus a System option that follows Windows.
 /// </summary>
 internal static class Theme
 {
+    /// <summary>The currently selected theme mode (Light, Dark, or System).</summary>
+    public static ThemeMode Mode { get; private set; }
+
+    /// <summary>True when the effective palette is dark.</summary>
+    public static bool IsDark { get; private set; }
+
     // Surfaces
-    public static readonly Color Bg = Color.FromArgb(13, 13, 16);          // #0d0d10
-    public static readonly Color RailBg = Color.FromArgb(10, 10, 12);      // #0a0a0c
-    public static readonly Color Surface = Color.FromArgb(24, 24, 27);     // #18181b
-    public static readonly Color Surface2 = Color.FromArgb(31, 31, 35);    // #1f1f23
-    public static readonly Color Surface3 = Color.FromArgb(39, 39, 42);    // #27272a
-    public static readonly Color Border = Color.FromArgb(46, 46, 51);      // #2e2e33
-    public static readonly Color BorderStrong = Color.FromArgb(63, 63, 70);// #3f3f46
+    public static Color Bg { get; private set; }
+    public static Color RailBg { get; private set; }
+    public static Color Surface { get; private set; }
+    public static Color Surface2 { get; private set; }
+    public static Color Surface3 { get; private set; }
+    public static Color Border { get; private set; }
+    public static Color BorderStrong { get; private set; }
 
     // Text
-    public static readonly Color Text = Color.FromArgb(244, 244, 245);     // #f4f4f5
-    public static readonly Color TextDim = Color.FromArgb(161, 161, 170);  // #a1a1aa
-    public static readonly Color TextMuted = Color.FromArgb(113, 113, 122);// #71717a
+    public static Color Text { get; private set; }
+    public static Color TextDim { get; private set; }
+    public static Color TextMuted { get; private set; }
 
     // Accents
-    public static readonly Color Accent = Color.FromArgb(167, 139, 250);   // #a78bfa
-    public static readonly Color Accent2 = Color.FromArgb(129, 140, 248); // #818cf8
-    public static readonly Color AccentInk = Color.FromArgb(26, 22, 37);  // text on accent fill (#1a1625)
-    public static readonly Color AccentGlow = Color.FromArgb(90, 167, 139, 250);
-    public static readonly Color AccentSoft = Color.FromArgb(40, 167, 139, 250);
+    public static Color Accent { get; private set; }
+    public static Color Accent2 { get; private set; }
+    public static Color AccentInk { get; private set; }
+    public static Color AccentGlow { get; private set; }
+    public static Color AccentSoft { get; private set; }
+    /// <summary>Solid background used for selected cards/rows.</summary>
+    public static Color AccentSelected { get; private set; }
 
     // Status
-    public static readonly Color Success = Color.FromArgb(52, 211, 153);   // #34d399
-    public static readonly Color SuccessSoft = Color.FromArgb(40, 52, 211, 153);
-    public static readonly Color Danger = Color.FromArgb(248, 113, 113);   // #f87171
-    public static readonly Color Warn = Color.FromArgb(251, 191, 36);      // #fbbf24
+    public static Color Success { get; private set; }
+    public static Color SuccessSoft { get; private set; }
+    public static Color Danger { get; private set; }
+    public static Color Warn { get; private set; }
+
+    static Theme() => ApplyMode(ThemeMode.System);
+
+    /// <summary>
+    /// Applies the given theme mode, resolving System against the Windows apps theme,
+    /// and assigns every colour token from the Light or Dark palette.
+    /// </summary>
+    public static void ApplyMode(ThemeMode mode)
+    {
+        Mode = mode;
+        bool dark = mode == ThemeMode.Dark
+                    || (mode == ThemeMode.System && !SystemUsesLightTheme());
+        IsDark = dark;
+
+        if (dark)
+        {
+            // Surfaces
+            Bg = Color.FromArgb(15, 16, 20);
+            RailBg = Color.FromArgb(11, 12, 16);
+            Surface = Color.FromArgb(22, 24, 30);
+            Surface2 = Color.FromArgb(28, 31, 39);
+            Surface3 = Color.FromArgb(35, 38, 47);
+            Border = Color.FromArgb(44, 48, 58);
+            BorderStrong = Color.FromArgb(59, 64, 76);
+            // Text
+            Text = Color.FromArgb(236, 236, 238);
+            TextDim = Color.FromArgb(163, 166, 176);
+            TextMuted = Color.FromArgb(109, 113, 124);
+            // Accents
+            Accent = Color.FromArgb(99, 102, 241);
+            Accent2 = Color.FromArgb(139, 92, 246);
+            AccentInk = Color.FromArgb(255, 255, 255);
+            AccentGlow = Color.FromArgb(90, 99, 102, 241);
+            AccentSoft = Color.FromArgb(46, 99, 102, 241);
+            AccentSelected = Color.FromArgb(35, 39, 68);
+            // Status
+            Success = Color.FromArgb(52, 211, 153);
+            SuccessSoft = Color.FromArgb(40, 52, 211, 153);
+            Danger = Color.FromArgb(248, 113, 113);
+            Warn = Color.FromArgb(251, 191, 36);
+        }
+        else
+        {
+            // Surfaces
+            Bg = Color.FromArgb(246, 247, 249);
+            RailBg = Color.FromArgb(238, 240, 244);
+            Surface = Color.FromArgb(255, 255, 255);
+            Surface2 = Color.FromArgb(255, 255, 255);
+            Surface3 = Color.FromArgb(238, 240, 244);
+            Border = Color.FromArgb(230, 231, 238);
+            BorderStrong = Color.FromArgb(215, 217, 227);
+            // Text
+            Text = Color.FromArgb(24, 26, 32);
+            TextDim = Color.FromArgb(92, 96, 107);
+            TextMuted = Color.FromArgb(146, 150, 161);
+            // Accents
+            Accent = Color.FromArgb(99, 102, 241);
+            Accent2 = Color.FromArgb(139, 92, 246);
+            AccentInk = Color.FromArgb(255, 255, 255);
+            AccentGlow = Color.FromArgb(90, 99, 102, 241);
+            AccentSoft = Color.FromArgb(30, 99, 102, 241);
+            AccentSelected = Color.FromArgb(236, 236, 252);
+            // Status
+            Success = Color.FromArgb(22, 163, 74);
+            SuccessSoft = Color.FromArgb(36, 22, 163, 74);
+            Danger = Color.FromArgb(220, 38, 38);
+            Warn = Color.FromArgb(217, 119, 6);
+        }
+    }
+
+    /// <summary>
+    /// Reads the Windows "AppsUseLightTheme" preference from the registry.
+    /// Returns true (light) on any error or when the value is missing.
+    /// </summary>
+    private static bool SystemUsesLightTheme()
+    {
+        try
+        {
+            using var key = Registry.CurrentUser.OpenSubKey(
+                @"Software\Microsoft\Windows\CurrentVersion\Themes\Personalize");
+            var value = key?.GetValue("AppsUseLightTheme");
+            if (value is null)
+                return true;
+            return (int)value != 0;
+        }
+        catch
+        {
+            return true;
+        }
+    }
 
     // Fonts
     public static readonly string FontFamily = "Segoe UI Variable Display";
