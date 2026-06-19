@@ -769,6 +769,19 @@ public class ProcessPane : UserControl
             AvailableTools = new List<string>(),
             OnPermissionRequest = PermissionHandler.ApproveAll,
             Streaming = true,
+            // One-shot text transform — disable the agentic machinery (skills, embeddings,
+            // hooks, git, MCP, session store, infinite-session workspace, config/instruction
+            // discovery) so each request is as close to a plain completion as the SDK allows.
+            SkipEmbeddingRetrieval = true,
+            SkipCustomInstructions = true,
+            EnableConfigDiscovery = false,
+            EnableOnDemandInstructionDiscovery = false,
+            EnableSkills = false,
+            EnableFileHooks = false,
+            EnableHostGitOperations = false,
+            EnableSessionStore = false,
+            EnableSessionTelemetry = false,
+            InfiniteSessions = new InfiniteSessionConfig { Enabled = false },
         });
 
         var done = new TaskCompletionSource();
