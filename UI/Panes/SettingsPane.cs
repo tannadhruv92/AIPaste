@@ -451,13 +451,7 @@ public class SettingsPane : UserControl
 
     private void UpdateCliSourceLabel()
     {
-        var mgr = CopilotClientManager.Instance;
-        if (mgr.IsUsingBundledCli)
-            _cliSourceLabel.Text = "CLI: bundled fallback — install/update the CLI for the latest models";
-        else if (!string.IsNullOrEmpty(mgr.ActiveCliPath))
-            _cliSourceLabel.Text = $"CLI: {mgr.ActiveCliPath}";
-        else
-            _cliSourceLabel.Text = "CLI: system";
+        _cliSourceLabel.Text = "CLI: bundled with the app (matched to the SDK)";
     }
 
     private async Task LoadModelsAsync()

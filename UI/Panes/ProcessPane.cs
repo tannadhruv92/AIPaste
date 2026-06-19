@@ -3,7 +3,7 @@ using System.Windows.Forms;
 using AIPaste.UI.Controls;
 using Azure;
 using Azure.AI.OpenAI;
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 
 namespace AIPaste.UI.Panes;
 
@@ -772,7 +772,7 @@ public class ProcessPane : UserControl
         });
 
         var done = new TaskCompletionSource();
-        session.On(evt =>
+        session.On<SessionEvent>(evt =>
         {
             if (evt is AssistantMessageDeltaEvent delta && !string.IsNullOrEmpty(delta.Data?.DeltaContent))
             {

@@ -1,5 +1,4 @@
-using GitHub.Copilot.SDK;
-using System.Diagnostics;
+using GitHub.Copilot;
 
 namespace AIPaste
 {
@@ -16,16 +15,6 @@ namespace AIPaste
         private DateTime _lastUsed;
         private readonly TimeSpan _idleTimeout = TimeSpan.FromMinutes(10);
 
-        /// <summary>
-        /// Path of the copilot.exe the active client is using, or null if the
-        /// SDK is using its bundled binary (under runtimes\win-x64\native\).
-        /// Populated after the first successful <see cref="GetClientAsync"/>.
-        /// </summary>
-        public string? ActiveCliPath { get; private set; }
-
-        /// <summary>True when the active client is using the SDK's bundled binary.</summary>
-        public bool IsUsingBundledCli => _isStarted && ActiveCliPath == null;
-        
         // Pre-warmed session support
         private CopilotSession? _warmSession;
         private string? _warmSessionModel;
@@ -55,22 +44,11 @@ namespace AIPaste
         /// </summary>
         public async Task<CopilotClient> GetClientAsync()
         {
-            // Check if we need a new client
             if (_client == null || !_isStarted)
             {
                 await InitializeClientAsync();
             }
-            else
-            {
-                // Use State property for instant health check (no network call)
-                var state = _client.State;
-                if (state != ConnectionState.Connected)
-                {
-                    await DisposeClientAsync();
-                    await InitializeClientAsync();
-                }
-            }
-            
+
             _lastUsed = DateTime.Now;
             return _client!;
         }
@@ -109,19 +87,10 @@ namespace AIPaste
         
         private async Task InitializeClientAsync()
         {
-            // Prefer a system-installed CLI (kept current via `copilot update`)
-            // so ListModelsAsync surfaces the latest models without rebuilding.
-            // If none is found, fall back to the SDK's bundled copilot.exe under
-            // runtimes\win-x64\native\ — older models, but the app still works.
-            var cliPath = CliPathResolver.Resolve();
-            ActiveCliPath = cliPath;
-            Trace.WriteLine(cliPath != null
-                ? $"[AIPaste] Copilot CLI source: SYSTEM ({cliPath})"
-                : "[AIPaste] Copilot CLI source: BUNDLED (runtimes\\win-x64\\native\\copilot.exe)");
-
-            _client = cliPath != null
-                ? new CopilotClient(new CopilotClientOptions { CliPath = cliPath })
-                : new CopilotClient();
+            // Default CopilotClient() uses the SDK's bundled Copilot runtime — a matched
+            // pair with this SDK version. We deliberately do NOT use a system-installed
+            // CLI so the client and runtime protocol versions can never drift apart.
+            _client = new CopilotClient();
             await _client.StartAsync();
             _isStarted = true;
         }
@@ -196,7 +165,7 @@ namespace AIPaste
         /// <summary>
         /// Lists available models using the managed client.
         /// </summary>
-        public async Task<IReadOnlyList<ModelInfo>> ListModelsAsync()
+        public async Task<IList<ModelInfo>> ListModelsAsync()
         {
             var client = await GetClientAsync();
             return await client.ListModelsAsync();
@@ -215,7 +184,6 @@ namespace AIPaste
         {
             await DisposePreWarmedSessionAsync();
             await DisposeClientAsync();
-            CliPathResolver.Invalidate();
         }
     }
 }

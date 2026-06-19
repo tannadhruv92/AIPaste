@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using GitHub.Copilot.SDK;
+using GitHub.Copilot;
 using Newtonsoft.Json;
 
 namespace AIPaste
