@@ -278,12 +278,8 @@ public class AppShellForm : Form
     {
         if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
         {
-            if (!AIPaste.Copilot.CopilotAuth.IsSignedIn)
-            {
-                _statusBar.ModelText = "Sign in to select a model";
-                return;
-            }
-            _statusBar.ModelText = ConfigManager.GetCopilotPreferredModel();
+            var model = ConfigManager.GetCopilotPreferredModel();
+            _statusBar.ModelText = string.IsNullOrEmpty(model) ? "Select a model" : model;
             return;
         }
         var dep = ConfigManager.GetCustomDeploymentId();

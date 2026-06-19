@@ -2,7 +2,7 @@ using System;
 using System.IO;
 using System.Security.Cryptography;
 using System.Text;
-using AIPaste.Copilot;
+using GitHub.Copilot.SDK;
 using Newtonsoft.Json;
 
 namespace AIPaste
@@ -48,7 +48,7 @@ namespace AIPaste
                 return false;
                 
             if (config.Provider == AIProvider.GitHubCopilot)
-                return AIPaste.Copilot.CopilotAuth.IsSignedIn;
+                return true; // CLI auth is handled externally
                 
             if (config.Provider == AIProvider.Custom)
             {
@@ -199,49 +199,6 @@ namespace AIPaste
                 return false;
             }
         }
-
-        // Long-lived GitHub OAuth token (ghu_) — DPAPI-encrypted at rest.
-        public static string GetCopilotOAuthToken()
-        {
-            var enc = GetConfig().GitHubCopilot.EncryptedOAuthToken;
-            if (string.IsNullOrEmpty(enc)) return string.Empty;
-            try
-            {
-                byte[] data = Convert.FromBase64String(enc);
-                byte[] dec = ProtectedData.Unprotect(data, entropy, DataProtectionScope.CurrentUser);
-                return Encoding.Unicode.GetString(dec);
-            }
-            catch
-            {
-                return string.Empty;
-            }
-        }
-
-        public static bool SetCopilotOAuthToken(string token)
-        {
-            try
-            {
-                byte[] data = Encoding.Unicode.GetBytes(token);
-                byte[] enc = ProtectedData.Protect(data, entropy, DataProtectionScope.CurrentUser);
-                GetConfig().GitHubCopilot.EncryptedOAuthToken = Convert.ToBase64String(enc);
-                SaveConfig();
-                return true;
-            }
-            catch
-            {
-                return false;
-            }
-        }
-
-        public static void ClearCopilotOAuthToken()
-        {
-            try
-            {
-                GetConfig().GitHubCopilot.EncryptedOAuthToken = string.Empty;
-                SaveConfig();
-            }
-            catch { }
-        }
         
         // Custom Actions
         public static List<CustomAction> GetCustomActions()
@@ -330,49 +287,71 @@ namespace AIPaste
         }
         
         // Centralized Copilot SDK methods
-        private static List<CopilotModel>? _cachedModels;
+        private static List<ModelInfo>? _cachedModels;
         private static DateTime _modelsCacheTime = DateTime.MinValue;
         private static readonly TimeSpan ModelsCacheDuration = TimeSpan.FromMinutes(5);
         
-        public static async Task<List<CopilotModel>?> GetCopilotModelsAsync(bool forceRefresh = false)
+        public static async Task<List<ModelInfo>?> GetCopilotModelsAsync(bool forceRefresh = false)
         {
             // Return cached models if still valid
             if (!forceRefresh && _cachedModels != null && DateTime.Now - _modelsCacheTime < ModelsCacheDuration)
             {
                 return _cachedModels;
             }
-
-            var models = await CopilotApiClient.ListModelsAsync();
-            if (models.Count > 0)
+            
+            try
             {
-                _cachedModels = models;
-                _modelsCacheTime = DateTime.Now;
-                return _cachedModels;
+                // Use singleton client manager
+                var models = await CopilotClientManager.Instance.ListModelsAsync();
+                
+                if (models != null && models.Count > 0)
+                {
+                    _cachedModels = models.ToList();
+                    _modelsCacheTime = DateTime.Now;
+                    return _cachedModels;
+                }
+                
+                // No models returned - clear cache
+                _cachedModels = null;
+                return null;
             }
-
-            _cachedModels = null;
-            return null;
+            catch
+            {
+                // Auth failed - clear cache and reset client
+                if (forceRefresh)
+                {
+                    _cachedModels = null;
+                    await CopilotClientManager.Instance.ResetAsync();
+                }
+                throw;
+            }
         }
-
+        
         public static async Task<(bool IsAuthenticated, string Message)> CheckCopilotAuthAsync()
         {
-            if (!CopilotAuth.IsSignedIn)
-                return (false, "Not signed in.");
-
             try
             {
                 var models = await GetCopilotModelsAsync(forceRefresh: true);
+                
                 if (models != null && models.Count > 0)
-                    return (true, "Authenticated");
-
-                return (false, "Signed in, but no models are available for this account.");
-            }
-            catch (NotSignedInException)
-            {
-                return (false, "Sign-in expired. Please sign in again.");
+                {
+                    return (true, "Authenticated!");
+                }
+                
+                return (false, "No models available. Please login first.\nRun 'copilot' and type /login");
             }
             catch (Exception ex)
             {
+                string errorMsg = ex.Message.ToLower();
+                if (errorMsg.Contains("not found") || errorMsg.Contains("cannot find") || errorMsg.Contains("not recognized"))
+                {
+                    return (false, "Copilot CLI not found.\nInstall: winget install GitHub.Copilot");
+                }
+                else if (errorMsg.Contains("auth") || errorMsg.Contains("login") || errorMsg.Contains("unauthorized"))
+                {
+                    return (false, "Not authenticated.\nRun 'copilot' and type /login");
+                }
+                
                 return (false, $"Error: {ex.Message}");
             }
         }
@@ -392,10 +371,11 @@ namespace AIPaste
         public string PreferredModel { get; set; } = "gpt-4o";
 
         /// <summary>
-        /// Long-lived GitHub OAuth token (ghu_), DPAPI-encrypted. Lets the user
-        /// stay signed in across restarts without re-running the device flow.
+        /// Optional absolute path to a copilot.exe. When empty, CliPathResolver
+        /// auto-discovers one from PATH / winget / npm-global. Set this to pin a
+        /// specific install if multiple copies exist on the machine.
         /// </summary>
-        public string EncryptedOAuthToken { get; set; } = string.Empty;
+        public string CliPathOverride { get; set; } = string.Empty;
     }
     
     public class CustomProviderConfig

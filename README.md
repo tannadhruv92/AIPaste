@@ -5,18 +5,7 @@ A Windows system-tray companion that **transforms your clipboard with AI**. Rewr
 ![.NET](https://img.shields.io/badge/.NET-9.0-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-2.1.0-purple)
-
----
-
-## 🆕 What's new in **v2.1.0**
-
-Copilot integration rebuilt around the direct HTTP API — no CLI or SDK at runtime.
-
-- **In-app sign-in** – GitHub OAuth browser device flow; the token is stored DPAPI-encrypted and reused across restarts. No `copilot` CLI install or login.
-- **No CLI/SDK dependency** – dropped the bundled Copilot CLI and SDK; the app talks straight to the Copilot HTTP API, so it never needs rebuilding to track CLI updates.
-- **All models supported** – per-request routing between the `/chat/completions` and `/responses` endpoints, so newer models (codex, gpt-5.x, mai-code) work alongside Claude and Gemini.
-- **Request timing** – status bar now shows how long each request took.
+![Version](https://img.shields.io/badge/Version-2.0.0-purple)
 
 ---
 
@@ -59,8 +48,8 @@ A complete UI redesign and rearchitecture. AIPaste went from a stack of basic Wi
 ## ✨ Features
 
 - **AI-powered text transforms** – Rewrite, translate, or run custom prompts on any clipboard text
-- **Two providers** – GitHub Copilot (built-in browser sign-in, no CLI/SDK) or Azure OpenAI (bring your own endpoint + key)
-- **Per-request model picker** – Pick any available model on the fly via the model pill (routes automatically to the right Copilot API)
+- **Two providers** – GitHub Copilot (CLI auth, bundled) or Azure OpenAI (bring your own endpoint + key)
+- **Per-request model picker** – Pick any available model on the fly via the model pill
 - **Tone control** – Professional · Casual · Informative · Enthusiastic
 - **Translation** – Hindi & Gujarati out of the box (more easy to add)
 - **Custom Actions** – Reusable AI prompts with `{text}` placeholder; manage from the in-app pane
@@ -76,7 +65,7 @@ A complete UI redesign and rearchitecture. AIPaste went from a stack of basic Wi
 - Windows 10 / 11
 - .NET 9.0 Desktop Runtime
 - One of the following:
-  - **GitHub Copilot** – Active GitHub Copilot subscription (sign in from inside the app via GitHub's browser device flow — no CLI or SDK required)
+  - **GitHub Copilot** – Active GitHub Copilot subscription (Copilot CLI is bundled with the app)
   - **Azure OpenAI** – Azure subscription with a deployed OpenAI resource
 
 ---
@@ -98,6 +87,8 @@ cd AIPaste
 dotnet build -c Release
 ```
 
+The build pulls the bundled GitHub Copilot CLI on first compile (~50 MB download).
+
 ---
 
 ## ⚙️ Configuration
@@ -107,11 +98,10 @@ When you first run AIPaste, it'll prompt you to configure a provider. Inside the
 ### GitHub Copilot
 
 1. In **Settings**, select the **⚡ GitHub Copilot** card
-2. Click **Sign in** — AIPaste copies the device code and opens GitHub in your browser
-3. Paste the code, approve access, and the status pill turns green ✓ Authenticated
-4. Choose your **Default Model** and click **Save**
-
-Sign-in uses GitHub's OAuth device flow; the resulting token is stored DPAPI-encrypted and reused across restarts. The app talks directly to the Copilot HTTP API — no CLI, SDK, or background process.
+2. Open a terminal and run `copilot` (use the **Copy** button to copy the command)
+3. Type `/login` inside the Copilot CLI and follow the browser flow
+4. Back in AIPaste click **↻ Re-check** — status pill should turn green ✓ Authenticated
+5. Choose your **Default Model** and click **Save**
 
 ### Azure OpenAI
 
@@ -178,6 +168,7 @@ Reusable AI prompts for repetitive tasks. Switch to the **📋 Custom Actions** 
 
 - **.NET 9.0 SDK**
 - **Visual Studio 2022** or **VS Code** (with C# Dev Kit)
+- Internet access on first build (downloads the bundled Copilot CLI)
 
 ### Steps
 
@@ -197,10 +188,7 @@ AIPaste/
 ├── MainForm.cs                 # Hidden host form + system tray
 ├── MainForm.Designer.cs
 ├── ConfigManager.cs            # Settings persistence (DPAPI-encrypted)
-├── Copilot/                    # Direct GitHub Copilot HTTP integration (no CLI/SDK)
-│   ├── CopilotAuth.cs          # OAuth device flow + token cache
-│   ├── CopilotApiClient.cs     # Models + chat streaming; routes /chat/completions vs /responses
-│   └── CopilotModel.cs         # Model DTO
+├── CopilotClientManager.cs     # Singleton Copilot SDK client + session pre-warm
 ├── UI/
 │   ├── Theme.cs                # Colours, fonts, metrics
 │   ├── GraphicsExt.cs          # Rounded-rect helpers
@@ -249,7 +237,7 @@ MIT — see [LICENSE](LICENSE).
 
 ## 🙏 Acknowledgments
 
-- [GitHub Copilot HTTP API](https://docs.github.com/en/copilot)
+- [GitHub Copilot SDK](https://github.com/github/copilot-sdk)
 - [Azure.AI.OpenAI](https://www.nuget.org/packages/Azure.AI.OpenAI)
 
 ---

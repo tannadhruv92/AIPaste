@@ -1,9 +1,9 @@
 using System.Drawing;
 using System.Windows.Forms;
-using AIPaste.Copilot;
 using AIPaste.UI.Controls;
 using Azure;
 using Azure.AI.OpenAI;
+using GitHub.Copilot.SDK;
 
 namespace AIPaste.UI.Panes;
 
@@ -568,7 +568,7 @@ public class ProcessPane : UserControl
 
     private async Task ShowModelPickerAsync()
     {
-        IReadOnlyList<CopilotModel>? models = null;
+        IReadOnlyList<ModelInfo>? models = null;
         try { models = await ConfigManager.GetCopilotModelsAsync(); } catch { }
         if (models == null || models.Count == 0) return;
 
@@ -650,14 +650,6 @@ public class ProcessPane : UserControl
         {
             if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
             {
-                if (!CopilotAuth.IsSignedIn)
-                {
-                    _currentModel = string.Empty;
-                    _modelBtn.Title = "Sign in to select";
-                    _setStatusModel("Sign in to select a model");
-                    _modelBtn.Invalidate();
-                    return;
-                }
                 var models = await ConfigManager.GetCopilotModelsAsync();
                 if (models != null && models.Count > 0)
                 {
@@ -770,23 +762,41 @@ public class ProcessPane : UserControl
         _resultBox.Text = string.Empty;
         var sb = new System.Text.StringBuilder();
 
-        void OnDelta(string piece)
+        await using var session = await CopilotClientManager.Instance.CreateSessionAsync(new SessionConfig
         {
-            sb.Append(piece);
-            if (!IsDisposed && _resultBox.IsHandleCreated)
-            {
-                _resultBox.BeginInvoke(() =>
-                {
-                    // Normalize line endings: TextBox renders \n alone as a space.
-                    _resultBox.Text = NormalizeLineEndings(sb.ToString());
-                    _resultBox.SelectionStart = _resultBox.TextLength;
-                    _resultBox.ScrollToCaret();
-                });
-            }
-        }
+            Model = _currentModel,
+            SystemMessage = new SystemMessageConfig { Mode = SystemMessageMode.Replace, Content = systemPrompt },
+            AvailableTools = new List<string>(),
+            OnPermissionRequest = PermissionHandler.ApproveAll,
+            Streaming = true,
+        });
 
-        return await CopilotApiClient.StreamChatAsync(
-            _currentModel, systemPrompt, userPrompt, OnDelta);
+        var done = new TaskCompletionSource();
+        session.On(evt =>
+        {
+            if (evt is AssistantMessageDeltaEvent delta && !string.IsNullOrEmpty(delta.Data?.DeltaContent))
+            {
+                sb.Append(delta.Data.DeltaContent);
+                if (!IsDisposed && _resultBox.IsHandleCreated)
+                {
+                    _resultBox.BeginInvoke(() =>
+                    {
+                        // Normalize line endings: TextBox renders \n alone as a space.
+                        _resultBox.Text = NormalizeLineEndings(sb.ToString());
+                        _resultBox.SelectionStart = _resultBox.TextLength;
+                        _resultBox.ScrollToCaret();
+                    });
+                }
+            }
+            else if (evt is SessionIdleEvent)
+            {
+                done.TrySetResult();
+            }
+        });
+
+        await session.SendAsync(new MessageOptions { Prompt = userPrompt });
+        await done.Task;
+        return sb.ToString();
     }
 
     private string ExecuteCustomProvider(string systemPrompt, string userPrompt)

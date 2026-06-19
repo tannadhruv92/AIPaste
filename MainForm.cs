@@ -29,11 +29,10 @@ public partial class MainForm : Form
     {
         this.Hide();
         
-        // Pre-warm Copilot token exchange in background to cut first-request latency.
-        if (ConfigManager.IsProviderConfigured() && ConfigManager.GetProvider() == AIProvider.GitHubCopilot
-            && AIPaste.Copilot.CopilotAuth.IsSignedIn)
+        // Pre-warm Copilot client in background to eliminate cold-start on first use
+        if (ConfigManager.IsProviderConfigured() && ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
         {
-            _ = AIPaste.Copilot.CopilotAuth.GetCopilotTokenAsync();
+            _ = CopilotClientManager.Instance.WarmUpAsync();
         }
         
         // Check if provider is configured on startup
