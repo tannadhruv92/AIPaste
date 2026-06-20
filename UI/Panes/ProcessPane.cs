@@ -758,8 +758,11 @@ public class ProcessPane : UserControl
 
     private async Task<string> ExecuteCopilotAsync(string systemPrompt, string userPrompt)
     {
-        _resultBox.ForeColor = Theme.Text;
-        _resultBox.Text = string.Empty;
+        // Show a live placeholder until the first streamed token arrives — the CLI
+        // runtime has a few seconds of time-to-first-token, so without this the result
+        // pane would sit blank after the user clicks Process.
+        _resultBox.ForeColor = Theme.TextDim;
+        _resultBox.Text = "Streaming…";
         var sb = new System.Text.StringBuilder();
 
         await using var session = await CopilotClientManager.Instance.CreateSessionAsync(new SessionConfig
@@ -794,6 +797,8 @@ public class ProcessPane : UserControl
                 {
                     _resultBox.BeginInvoke(() =>
                     {
+                        // First real token replaces the "Streaming…" placeholder.
+                        _resultBox.ForeColor = Theme.Text;
                         // Normalize line endings: TextBox renders \n alone as a space.
                         _resultBox.Text = NormalizeLineEndings(sb.ToString());
                         _resultBox.SelectionStart = _resultBox.TextLength;
@@ -809,6 +814,11 @@ public class ProcessPane : UserControl
 
         await session.SendAsync(new MessageOptions { Prompt = userPrompt });
         await done.Task;
+
+        // No content streamed (e.g. empty or blocked response): don't leave the placeholder.
+        if (sb.Length == 0 && !IsDisposed && _resultBox.IsHandleCreated)
+            _resultBox.BeginInvoke(() => { _resultBox.ForeColor = Theme.Text; _resultBox.Text = string.Empty; });
+
         return sb.ToString();
     }
 
