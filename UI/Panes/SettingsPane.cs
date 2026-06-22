@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Drawing;
 using System.Windows.Forms;
 using AIPaste.UI.Controls;
@@ -20,6 +21,7 @@ public class SettingsPane : UserControl
     private TextBox _cliCmdBox = null!;
     private Button _copyCmdBtn = null!;
     private Button _recheckBtn = null!;
+    private Button _loginBtn = null!;
     private Label _cliSourceLabel = null!;
     private SurfaceCard _modelCard = null!;
     private ComboBox _modelCombo = null!;
@@ -38,6 +40,12 @@ public class SettingsPane : UserControl
     public event EventHandler? AuthChanged;
     public event EventHandler? ThemeChanged;
 
+    /// <summary>Live result of the last Copilot auth check (CLI signed in + models available).</summary>
+    public bool AuthOk { get; private set; }
+
+    /// <summary>The provider currently selected in the UI (may differ from saved config until Save).</summary>
+    public AIProvider SelectedProvider => _selectedProvider;
+
     public SettingsPane(Action onClose)
     {
         _onClose = onClose;
@@ -46,7 +54,19 @@ public class SettingsPane : UserControl
         AutoScroll = true;
 
         BuildLayout();
-        Load += async (_, _) => await LoadAsync();
+        CenterContent();
+        Resize += (_, _) => CenterContent();
+        Load += async (_, _) => { CenterContent(); await LoadAsync(); };
+    }
+
+    /// <summary>Keeps the fixed-width (600px) settings content horizontally centered so the
+    /// pane doesn't leave a large blank gap on the right on wide windows.</summary>
+    private void CenterContent()
+    {
+        const int contentWidth = 600;
+        int side = Math.Max(20, (ClientSize.Width - contentWidth) / 2);
+        if (Padding.Left != side || Padding.Right != side)
+            Padding = new Padding(side, 20, side, 20);
     }
 
     private void BuildLayout()
@@ -112,7 +132,7 @@ public class SettingsPane : UserControl
             BorderColor = Theme.Border,
             CornerRadius = Theme.CornerRadiusLg,
             Width = 600,
-            Height = 150,
+            Height = 196,
             Margin = new Padding(0, 0, 0, 16),
             Padding = new Padding(16),
         };
@@ -127,7 +147,7 @@ public class SettingsPane : UserControl
         };
         _authHint = new Label
         {
-            Text = "Run copilot in a terminal and type /login to authenticate.",
+            Text = "Run copilot in a terminal, then type /login to authenticate.",
             ForeColor = Theme.TextDim,
             Font = Theme.Small(),
             AutoSize = true,
@@ -138,7 +158,7 @@ public class SettingsPane : UserControl
         _authStatus = new StatusPill { Location = new Point(460, 14) };
         _cliCmdBox = new TextBox
         {
-            Text = "copilot",
+            Text = "/login",
             ReadOnly = true,
             BackColor = Theme.Surface3,
             ForeColor = Theme.Success,
@@ -149,19 +169,22 @@ public class SettingsPane : UserControl
         };
         _copyCmdBtn = MakeMiniBtn("📋  Copy", () =>
         {
-            Clipboard.SetText("copilot");
+            Clipboard.SetText("/login");
             _authStatus.Set("Copied", StatusKind.Pending);
         });
         _copyCmdBtn.Location = new Point(404, 66);
         _recheckBtn = MakeAccentBtn("↻  Re-check", async () => await CheckAuthAsync());
         _recheckBtn.Location = new Point(484, 66);
+        _loginBtn = MakeAccentBtn("🔓  Open Copilot to login", LaunchCopilotLogin);
+        _loginBtn.Size = new Size(240, 32);
+        _loginBtn.Location = new Point(16, 104);
         _cliSourceLabel = new Label
         {
             Text = "CLI: (not yet connected)",
             ForeColor = Theme.TextDim,
             Font = Theme.Small(),
             AutoSize = true,
-            Location = new Point(16, 104),
+            Location = new Point(16, 150),
             MaximumSize = new Size(560, 0),
             BackColor = Color.Transparent,
         };
@@ -171,6 +194,7 @@ public class SettingsPane : UserControl
         _authCard.Controls.Add(_cliCmdBox);
         _authCard.Controls.Add(_copyCmdBtn);
         _authCard.Controls.Add(_recheckBtn);
+        _authCard.Controls.Add(_loginBtn);
         _authCard.Controls.Add(_cliSourceLabel);
         stack.Controls.Add(_authCard);
 
@@ -423,6 +447,7 @@ public class SettingsPane : UserControl
         try
         {
             var (ok, msg) = await ConfigManager.CheckCopilotAuthAsync();
+            AuthOk = ok;
             if (ok)
             {
                 _authHint.Text = "Connected to GitHub Copilot via the CLI.";
@@ -439,6 +464,7 @@ public class SettingsPane : UserControl
         }
         catch (Exception ex)
         {
+            AuthOk = false;
             _authHint.Text = $"Error: {ex.Message}";
             _authStatus.Set("Error", StatusKind.Danger);
         }
@@ -452,6 +478,61 @@ public class SettingsPane : UserControl
     private void UpdateCliSourceLabel()
     {
         _cliSourceLabel.Text = "CLI: bundled with the app (matched to the SDK)";
+    }
+
+    /// <summary>Opens the app's bundled copilot.exe in a console so the user can run /login.</summary>
+    private void LaunchCopilotLogin()
+    {
+        try
+        {
+            string? exe = ResolveBundledCopilotPath();
+            if (exe == null)
+            {
+                _authHint.Text = "Bundled copilot.exe was not found next to the app.";
+                _authStatus.Set("CLI not found", StatusKind.Danger);
+                return;
+            }
+            // copilot.exe only accepts /login typed inside its interactive TUI (not as a
+            // command-line argument). So open the bare CLI and put /login on the clipboard
+            // for the user to paste + Enter.
+            try { Clipboard.SetText("/login"); } catch { }
+            Process.Start(new ProcessStartInfo
+            {
+                FileName = exe,
+                UseShellExecute = true, // opens its own console window running the TUI
+                WorkingDirectory = Path.GetDirectoryName(exe)!,
+            });
+            _authHint.Text = "Copilot opened. Paste (Ctrl+V) the /login command and press Enter, then click Re-check.";
+            _authStatus.Set("Opened", StatusKind.Pending);
+            _authStatus.Set("Opened", StatusKind.Pending);
+        }
+        catch (Exception ex)
+        {
+            _authHint.Text = $"Could not open Copilot: {ex.Message}";
+            _authStatus.Set("Error", StatusKind.Danger);
+        }
+    }
+
+    private static string? ResolveBundledCopilotPath()
+    {
+        string baseDir = AppContext.BaseDirectory;
+
+        // Preferred: the RID-specific native folder (framework-dependent / non-single-file build).
+        string rid = System.Runtime.InteropServices.RuntimeInformation.RuntimeIdentifier; // e.g. win-x64, win-arm64
+        string preferred = Path.Combine(baseDir, "runtimes", rid, "native", "copilot.exe");
+        if (File.Exists(preferred)) return preferred;
+
+        // Fallback: locate copilot.exe anywhere under the app/extraction dir
+        // (covers single-file temp layout and unexpected RID folder names).
+        try
+        {
+            return Directory.EnumerateFiles(baseDir, "copilot.exe", SearchOption.AllDirectories)
+                            .FirstOrDefault();
+        }
+        catch
+        {
+            return null;
+        }
     }
 
     private async Task LoadModelsAsync()

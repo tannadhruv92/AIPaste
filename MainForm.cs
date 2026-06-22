@@ -85,6 +85,18 @@ public partial class MainForm : Form
     {
         try
         {
+            // Preferred: load from the embedded managed resource (works in single-file).
+            var stream = System.Reflection.Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream("AIPaste.app.ico");
+            if (stream != null)
+            {
+                using (stream)
+                    return new System.Drawing.Icon(stream);
+            }
+        }
+        catch { }
+        try
+        {
             var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location;
             if (string.IsNullOrEmpty(exePath))
                 exePath = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;

@@ -21,6 +21,12 @@ static class Program
     [STAThread]
     static void Main(string[] args)
     {
+        // Pin the bundled Copilot CLI to the version shipped with the SDK by disabling
+        // its self-update, so the CLI/SDK protocol versions cannot drift apart. Set
+        // process-wide so every child copilot.exe (SDK-spawned or the login launch)
+        // inherits it via the environment block.
+        Environment.SetEnvironmentVariable("COPILOT_AUTO_UPDATE", "false");
+
         ApplicationConfiguration.Initialize();
         
         // Try to get a single-instance lock using a mutex

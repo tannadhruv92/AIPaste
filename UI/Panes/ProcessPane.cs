@@ -12,7 +12,7 @@ public enum ProcessMode { Rewrite, Translate, Custom }
 /// <summary>
 /// The default pane — the light "Transform Studio": a SOURCE pane on the left,
 /// a central SPINE (mode / model / transform) and a RESULT pane on the right,
-/// with a footer hosting timing, Regenerate and Accept &amp; Copy.
+/// with a footer hosting the Accept &amp; Copy action.
 /// </summary>
 public class ProcessPane : UserControl
 {
@@ -36,9 +36,6 @@ public class ProcessPane : UserControl
 
     // Result pane
     private RichTextBox _resultBox = null!;
-
-    // Footer
-    private Label _footerTiming = null!;
 
     // State
     private string _originalText = string.Empty;
@@ -303,38 +300,10 @@ public class ProcessPane : UserControl
         rowPanel.ColumnStyles.Add(new ColumnStyle(SizeType.AutoSize));
         rowPanel.RowStyles.Add(new RowStyle(SizeType.Percent, 100));
 
-        _footerTiming = new Label
-        {
-            Text = string.Empty,
-            ForeColor = Theme.Success,
-            Font = Theme.Small(),
-            AutoSize = true,
-            Anchor = AnchorStyles.None,
-            Margin = new Padding(0, 0, 12, 0),
-            BackColor = Color.Transparent,
-        };
-        var regen = MakeGhostBtn("↻  Regenerate", async () => await ExecuteCurrentRequestAsync(true));
-        regen.Anchor = AnchorStyles.None;
-        regen.Margin = new Padding(0);
-
-        var leftCluster = new FlowLayoutPanel
-        {
-            AutoSize = true,
-            AutoSizeMode = AutoSizeMode.GrowAndShrink,
-            FlowDirection = FlowDirection.LeftToRight,
-            WrapContents = false,
-            Anchor = AnchorStyles.Left,
-            BackColor = Color.Transparent,
-            Margin = new Padding(0),
-        };
-        leftCluster.Controls.Add(_footerTiming);
-        leftCluster.Controls.Add(regen);
-
         var accept = MakeAccentBtn("✓  Accept & Copy", AcceptAndCopy);
         accept.Anchor = AnchorStyles.None;
         accept.Margin = new Padding(0);
 
-        rowPanel.Controls.Add(leftCluster, 0, 0);
         rowPanel.Controls.Add(accept, 1, 0);
 
         // Fill first (back), then top border (front).
@@ -392,28 +361,6 @@ public class ProcessPane : UserControl
         Anchor = AnchorStyles.Left | AnchorStyles.Right,
         Margin = new Padding(2, 0, 2, 0),
     };
-
-    private Button MakeGhostBtn(string text, Action onClick)
-    {
-        var b = new Button
-        {
-            Text = text,
-            FlatStyle = FlatStyle.Flat,
-            BackColor = Theme.Surface3,
-            ForeColor = Theme.TextDim,
-            Font = Theme.Small(),
-            AutoSize = true,
-            Padding = new Padding(10, 6, 10, 6),
-            Cursor = Cursors.Hand,
-            Margin = new Padding(0),
-        };
-        b.FlatAppearance.BorderSize = 0;
-        b.FlatAppearance.MouseOverBackColor = Theme.Surface2;
-        b.MouseEnter += (_, _) => b.ForeColor = Theme.Text;
-        b.MouseLeave += (_, _) => b.ForeColor = Theme.TextDim;
-        b.Click += (_, _) => onClick();
-        return b;
-    }
 
     private Button MakeAccentBtn(string text, Action onClick)
     {
@@ -691,7 +638,6 @@ public class ProcessPane : UserControl
 
         _resultBox.ForeColor = Theme.Text;
         _resultBox.Text = isRetry ? string.Empty : "Processing…";
-        _footerTiming.Text = string.Empty;
         _setStatusTiming(string.Empty);
 
         var sw = System.Diagnostics.Stopwatch.StartNew();
@@ -738,7 +684,6 @@ public class ProcessPane : UserControl
             sw.Stop();
             var elapsed = FormatElapsed(sw.Elapsed);
             _setStatusTiming(elapsed);
-            _footerTiming.Text = string.IsNullOrEmpty(_processedText) ? string.Empty : $"⏱ {elapsed}";
         }
     }
 

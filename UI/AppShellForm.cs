@@ -69,8 +69,8 @@ public class AppShellForm : Form
         _clipboardText = clipboardText ?? string.Empty;
 
         Text = "AIPaste";
-        Size = new Size(960, 640);
-        MinimumSize = new Size(820, 520);
+        Size = new Size(960, 700);
+        MinimumSize = new Size(820, 560);
         StartPosition = FormStartPosition.CenterScreen;
         FormBorderStyle = FormBorderStyle.None;
         BackColor = Theme.Bg;
@@ -259,10 +259,20 @@ public class AppShellForm : Form
                 };
                 _settingsPane.AuthChanged += (_, _) =>
                 {
-                    _statusBar.Authenticated = ConfigManager.IsConfigComplete();
+                    // Reflect the live auth result from the settings card so the status bar
+                    // and the Authentication card never disagree.
+                    _statusBar.Authenticated = _settingsPane.AuthOk;
                     _processPane?.Dispose();
                     _processPane = null;
-                    RefreshStatusModel();
+                    if (_settingsPane.SelectedProvider == AIProvider.GitHubCopilot)
+                    {
+                        var model = ConfigManager.GetCopilotPreferredModel();
+                        _statusBar.ModelText = string.IsNullOrEmpty(model) ? "Select a model" : model;
+                    }
+                    else
+                    {
+                        RefreshStatusModel();
+                    }
                 };
                 _contentHost.Controls.Add(_settingsPane);
                 _appTitle.Text = "AIPaste";
@@ -333,6 +343,18 @@ public class AppShellForm : Form
     /// </summary>
     private static Icon LoadAppIcon()
     {
+        try
+        {
+            // Preferred: load from the embedded managed resource (works in single-file).
+            var stream = System.Reflection.Assembly.GetExecutingAssembly()
+                .GetManifestResourceStream("AIPaste.app.ico");
+            if (stream != null)
+            {
+                using (stream)
+                    return new Icon(stream);
+            }
+        }
+        catch { }
         try
         {
             var exePath = System.Reflection.Assembly.GetEntryAssembly()?.Location;

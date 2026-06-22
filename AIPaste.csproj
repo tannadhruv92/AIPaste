@@ -34,4 +34,10 @@
     <PackageReference Include="Newtonsoft.Json" Version="13.0.3" />
   </ItemGroup>
 
+  <ItemGroup>
+    <!-- Embed the app icon as a managed resource so it loads reliably in single-file
+         publishes, where Assembly.Location is empty and icon extraction is unreliable. -->
+    <EmbeddedResource Include="app.ico" LogicalName="AIPaste.app.ico" />
+  </ItemGroup>
+
 </Project>

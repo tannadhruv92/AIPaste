@@ -20,7 +20,13 @@ namespace AIPaste
     {
         private const string ConfigFileName = "config.json";
         private static readonly byte[] entropy = Encoding.Unicode.GetBytes("AIPaste_Secret_Entropy");
-        private static string ConfigFilePath => Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ConfigFileName);
+
+        // Persist config in a stable per-user location (%APPDATA%\AIPaste) so settings,
+        // custom actions and credentials survive app updates and single-file re-extraction.
+        // (For the portable build, BaseDirectory points at a volatile temp extraction folder.)
+        private static string AppDataDir =>
+            Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData), "AIPaste");
+        private static string ConfigFilePath => Path.Combine(AppDataDir, ConfigFileName);
         
         private static AppConfig? _config;
         
@@ -276,6 +282,7 @@ namespace AIPaste
         
         private static void SaveConfig()
         {
+            Directory.CreateDirectory(AppDataDir);
             string json = JsonConvert.SerializeObject(_config, Formatting.Indented);
             File.WriteAllText(ConfigFilePath, json);
         }
