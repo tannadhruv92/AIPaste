@@ -5,7 +5,18 @@ A Windows system-tray companion that **transforms your clipboard with AI**. Rewr
 ![.NET](https://img.shields.io/badge/.NET-9.0-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-2.0.0-purple)
+![Version](https://img.shields.io/badge/Version-2.2.0-purple)
+
+---
+
+## 🆕 What's new in **v2.2.0**
+
+- **One-click Copilot login** – A new **Open Copilot to login** button in Settings opens the bundled Copilot CLI and copies `/login` to your clipboard, so signing in is just paste + Enter.
+- **Pinned Copilot CLI** – The bundled CLI no longer self-updates (`COPILOT_AUTO_UPDATE=false`), keeping it version-matched to the SDK so sign-in can't break from version drift.
+- **Stable config location** – Settings, custom actions and credentials now live in `%APPDATA%\AIPaste\config.json`, so they survive app updates (the portable build previously stored them in a volatile temp folder).
+- **Single-file portable EXE** – One self-contained `AIPaste.exe` (bundles .NET + the Copilot CLI); no install required.
+- **Theme switcher** – Choose **System**, **Light**, or **Dark** from Settings → Appearance; the app re-skins instantly.
+- **UI fixes** – The tray icon now shows in the single-file build, Settings content is centered with the Save button always visible, and the duplicate timing label / Regenerate button were removed (timing stays in the status bar).
 
 ---
 
@@ -54,6 +65,7 @@ A complete UI redesign and rearchitecture. AIPaste went from a stack of basic Wi
 - **Translation** – Hindi & Gujarati out of the box (more easy to add)
 - **Custom Actions** – Reusable AI prompts with `{text}` placeholder; manage from the in-app pane
 - **Streaming output** – AI result appears live, character by character
+- **Theme** – System · Light · Dark, switchable in Settings (follows Windows by default)
 - **Status bar** – Always-on auth indicator + current model
 - **Single-instance** – Activate the running tray app instead of launching duplicates
 - **System tray** – Quietly minimised; one click to open, one click to quit
@@ -74,10 +86,10 @@ A complete UI redesign and rearchitecture. AIPaste went from a stack of basic Wi
 
 ### Option 1 — Download Release (recommended)
 
-1. Grab the latest from [Releases](../../releases)
-2. Extract the archive somewhere persistent (e.g. `C:\Program Files\AIPaste\`)
-3. Run `AIPaste.exe`
-4. *(Optional)* Right-click → **Pin to taskbar** for one-click access
+1. Download the latest `AIPaste.exe` from [Releases](../../releases) — it's a single self-contained file (bundles .NET + the Copilot CLI)
+2. Place it somewhere persistent (e.g. `%LOCALAPPDATA%\AIPaste\`); keep the path stable so a taskbar pin keeps working across updates
+3. Run `AIPaste.exe` — it starts in the system tray
+4. *(Optional)* Right-click the taskbar entry → **Pin to taskbar**; then `Win`+`<number>` opens it instantly (single-instance reuses the running app)
 
 ### Option 2 — Build from Source
 
@@ -95,11 +107,21 @@ The build pulls the bundled GitHub Copilot CLI on first compile (~50 MB download
 
 When you first run AIPaste, it'll prompt you to configure a provider. Inside the popup, click the **⚙ Settings** icon at the bottom of the rail.
 
+### Appearance
+
+Choose a theme at the top of **Settings → Appearance**:
+
+- **🖥 System** – follow the Windows light/dark setting (default)
+- **☀ Light** – always light
+- **🌙 Dark** – always dark
+
+The app re-skins instantly and your choice is saved.
+
 ### GitHub Copilot
 
 1. In **Settings**, select the **⚡ GitHub Copilot** card
-2. Open a terminal and run `copilot` (use the **Copy** button to copy the command)
-3. Type `/login` inside the Copilot CLI and follow the browser flow
+2. Click **🔓 Open Copilot to login** — this opens the bundled Copilot CLI and copies `/login` to your clipboard
+3. In the Copilot terminal, paste (`Ctrl+V`) and press **Enter**, then follow the browser flow
 4. Back in AIPaste click **↻ Re-check** — status pill should turn green ✓ Authenticated
 5. Choose your **Default Model** and click **Save**
 
@@ -114,7 +136,7 @@ When you first run AIPaste, it'll prompt you to configure a provider. Inside the
 4. In AIPaste **Settings**, select the **☁ Azure OpenAI** card
 5. Fill in API key, endpoint, and deployment ID, then **Save**
 
-API keys are encrypted with Windows DPAPI before being stored in `config.json`.
+API keys are encrypted with Windows DPAPI before being stored in `config.json` (located at `%APPDATA%\AIPaste\config.json`).
 
 ---
 
@@ -204,7 +226,7 @@ AIPaste/
 │       ├── ProcessPane.cs      # Default pane — chip toolbar + clipboard + result
 │       ├── SettingsPane.cs     # Provider · auth · default model
 │       └── CustomActionsPane.cs# List + detail editor for saved prompts
-└── config.json                 # User configuration (auto-created next to the EXE)
+└── config.json                 # User configuration (stored in %APPDATA%\AIPaste)
 ```
 
 ---
@@ -213,7 +235,7 @@ AIPaste/
 
 - API keys are encrypted with Windows DPAPI (per-user) before persisting to `config.json`
 - All data stays local — nothing is sent anywhere except your configured AI provider
-- Configuration lives next to `AIPaste.exe` (portable)
+- Configuration lives in `%APPDATA%\AIPaste\config.json` (per-user; survives app updates)
 
 ---
 
