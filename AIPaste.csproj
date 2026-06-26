@@ -8,9 +8,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>app.ico</ApplicationIcon>
     <!-- Product version — CLI/SDK Copilot integration restored on the themed UI shell. -->
-    <Version>2.2.0</Version>
-    <AssemblyVersion>2.2.0.0</AssemblyVersion>
-    <FileVersion>2.2.0.0</FileVersion>
+    <Version>2.2.1</Version>
+    <AssemblyVersion>2.2.1.0</AssemblyVersion>
+    <FileVersion>2.2.1.0</FileVersion>
     <Product>AIPaste</Product>
     <Company>Dhruv Tanna</Company>
     <Copyright>Copyright © 2026 Dhruv Tanna</Copyright>
@@ -35,8 +35,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <!-- Embed the app icon as a managed resource so it loads reliably in single-file
-         publishes, where Assembly.Location is empty and icon extraction is unreliable. -->
+    <!-- Embed the app icon as a managed resource so it loads reliably from portable zip installs. -->
     <EmbeddedResource Include="app.ico" LogicalName="AIPaste.app.ico" />
   </ItemGroup>
 
