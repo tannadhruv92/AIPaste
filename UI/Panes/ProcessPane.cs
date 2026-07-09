@@ -71,24 +71,49 @@ public class ProcessPane : UserControl
         Padding = new Padding(0);
 
         _currentAction = ConfigManager.GetCustomActions().FirstOrDefault();
+        _currentModel = ResolveInitialModel();
 
         BuildLayout();
         SetActiveMode(ProcessMode.Rewrite);
         UpdateOriginal(_originalText);
-
-        // Fire & forget: load models when handle is created.
-        HandleCreated += async (_, _) => await LoadModelsAsync();
+        PublishCurrentModel();
     }
 
     public void UpdateOriginal(string text)
     {
-        _originalText = text ?? string.Empty;
+        var newText = text ?? string.Empty;
+        bool changed = !string.Equals(_originalText, newText, StringComparison.Ordinal);
+        _originalText = newText;
         _originalBox.Text = NormalizeLineEndings(_originalText);
         _charCount.Text = $"{_originalText.Length} chars";
+
+        if (changed)
+        {
+            _processedText = string.Empty;
+            _resultBox.ForeColor = Theme.TextMuted;
+            _resultBox.Text = ResultPlaceholder;
+            _setStatusTiming(string.Empty);
+        }
     }
 
     /// <summary>Gives keyboard focus to the primary (Rewrite) mode button.</summary>
     public void FocusPrimary() => _rewriteBtn?.Focus();
+
+    private static string ResolveInitialModel()
+    {
+        if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
+        {
+            var preferred = ConfigManager.GetCopilotPreferredModel();
+            return string.IsNullOrWhiteSpace(preferred) ? "gpt-4o" : preferred;
+        }
+
+        return ConfigManager.GetCustomDeploymentId();
+    }
+
+    private void PublishCurrentModel()
+    {
+        _setStatusModel(string.IsNullOrWhiteSpace(_currentModel) ? "(no model)" : _currentModel);
+    }
 
     // ============================================================== Layout ===
 
@@ -204,7 +229,7 @@ public class ProcessPane : UserControl
         _modelBtn = new SpineDropdownButton
         {
             Glyph = "⚡",
-            Title = string.IsNullOrEmpty(_currentModel) ? "Loading…" : _currentModel,
+            Title = string.IsNullOrEmpty(_currentModel) ? "(no model)" : _currentModel,
             ShowCaret = true,
             Active = false,
             Dock = DockStyle.Fill,
@@ -586,42 +611,6 @@ public class ProcessPane : UserControl
         {
             Clipboard.SetText(_processedText);
             AcceptedAndCopied?.Invoke(this, _processedText);
-        }
-    }
-
-    // =============================================================== Models ===
-
-    private async Task LoadModelsAsync()
-    {
-        try
-        {
-            if (ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
-            {
-                var models = await ConfigManager.GetCopilotModelsAsync();
-                if (models != null && models.Count > 0)
-                {
-                    string preferred = ConfigManager.GetCopilotPreferredModel();
-                    var match = models.FirstOrDefault(m => m.Id == preferred) ?? models.First();
-                    _currentModel = match.Id;
-                    _modelBtn.Title = match.Id;
-                    _setStatusModel(match.Id);
-                    _modelBtn.Invalidate();
-                    return;
-                }
-            }
-            // Custom provider — show deployment id.
-            var dep = ConfigManager.GetCustomDeploymentId();
-            if (!string.IsNullOrEmpty(dep))
-            {
-                _currentModel = dep;
-                _modelBtn.Title = dep;
-                _setStatusModel(dep);
-                _modelBtn.Invalidate();
-            }
-        }
-        catch
-        {
-            // Silent — status bar will show "(no model)".
         }
     }
 

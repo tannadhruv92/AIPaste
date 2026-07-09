@@ -1,3 +1,4 @@
+using System.Threading;
 using GitHub.Copilot;
 
 namespace AIPaste
@@ -11,6 +12,7 @@ namespace AIPaste
         private static readonly object _lock = new object();
         
         private CopilotClient? _client;
+        private readonly SemaphoreSlim _clientInitLock = new SemaphoreSlim(1, 1);
         private bool _isStarted;
         private DateTime _lastUsed;
         private readonly TimeSpan _idleTimeout = TimeSpan.FromMinutes(10);
@@ -44,23 +46,37 @@ namespace AIPaste
         /// </summary>
         public async Task<CopilotClient> GetClientAsync()
         {
-            if (_client == null || !_isStarted)
+            if (_client != null && _isStarted)
             {
-                await InitializeClientAsync();
+                _lastUsed = DateTime.Now;
+                return _client;
             }
 
-            _lastUsed = DateTime.Now;
-            return _client!;
+            await _clientInitLock.WaitAsync().ConfigureAwait(false);
+            try
+            {
+                if (_client == null || !_isStarted)
+                {
+                    await InitializeClientAsync().ConfigureAwait(false);
+                }
+
+                _lastUsed = DateTime.Now;
+                return _client!;
+            }
+            finally
+            {
+                _clientInitLock.Release();
+            }
         }
         
         /// <summary>
         /// Pre-warms the client connection without creating a session.
         /// Call at app startup to eliminate cold-start latency on first use.
         /// </summary>
-        public async Task WarmUpAsync()
+        public Task WarmUpAsync() => Task.Run(async () =>
         {
-            try { await GetClientAsync(); } catch { }
-        }
+            try { await GetClientAsync().ConfigureAwait(false); } catch { }
+        });
         
         /// <summary>
         /// Pre-creates a session in the background for faster first use.
@@ -75,8 +91,8 @@ namespace AIPaste
             {
                 try
                 {
-                    var client = await GetClientAsync();
-                    var session = await client.CreateSessionAsync(config);
+                    var client = await GetClientAsync().ConfigureAwait(false);
+                    var session = await client.CreateSessionAsync(config).ConfigureAwait(false);
                     _warmSession = session;
                     _warmSessionModel = model;
                     _warmSessionSystemPrompt = systemPrompt;
@@ -87,25 +103,53 @@ namespace AIPaste
         
         private async Task InitializeClientAsync()
         {
+            if (_client != null && !_isStarted)
+            {
+                try { await _client.DisposeAsync().ConfigureAwait(false); } catch { }
+                _client = null;
+            }
+
             // Default CopilotClient() uses the SDK's bundled Copilot runtime — a matched
             // pair with this SDK version. We deliberately do NOT use a system-installed
             // CLI so the client and runtime protocol versions can never drift apart.
-            _client = new CopilotClient();
-            await _client.StartAsync();
+            var client = await Task.Run(async () =>
+            {
+                var newClient = new CopilotClient();
+                try
+                {
+                    await newClient.StartAsync().ConfigureAwait(false);
+                    return newClient;
+                }
+                catch
+                {
+                    try { await newClient.DisposeAsync().ConfigureAwait(false); } catch { }
+                    throw;
+                }
+            }).ConfigureAwait(false);
+
+            _client = client;
             _isStarted = true;
         }
         
         private async Task DisposeClientAsync()
         {
-            if (_client != null)
+            await _clientInitLock.WaitAsync().ConfigureAwait(false);
+            try
             {
-                try
+                if (_client != null)
                 {
-                    await _client.DisposeAsync();
+                    try
+                    {
+                        await _client.DisposeAsync().ConfigureAwait(false);
+                    }
+                    catch { }
+                    _client = null;
+                    _isStarted = false;
                 }
-                catch { }
-                _client = null;
-                _isStarted = false;
+            }
+            finally
+            {
+                _clientInitLock.Release();
             }
         }
         
@@ -158,8 +202,8 @@ namespace AIPaste
                 }
             }
             
-            var client = await GetClientAsync();
-            return await client.CreateSessionAsync(config);
+            var client = await GetClientAsync().ConfigureAwait(false);
+            return await client.CreateSessionAsync(config).ConfigureAwait(false);
         }
         
         /// <summary>
@@ -167,8 +211,8 @@ namespace AIPaste
         /// </summary>
         public async Task<IList<ModelInfo>> ListModelsAsync()
         {
-            var client = await GetClientAsync();
-            return await client.ListModelsAsync();
+            var client = await GetClientAsync().ConfigureAwait(false);
+            return await client.ListModelsAsync().ConfigureAwait(false);
         }
         
         public async ValueTask DisposeAsync()

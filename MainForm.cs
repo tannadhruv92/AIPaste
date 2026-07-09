@@ -8,6 +8,7 @@ public partial class MainForm : Form
 {
     private NotifyIcon? notifyIcon;
     private ContextMenuStrip? contextMenu;
+    private AIPaste.UI.AppShellForm? appWindow;
     private bool openPopupOnStart;
 
     private const int WM_SHOWME = 0x8001;
@@ -28,22 +29,28 @@ public partial class MainForm : Form
     private void Form1_Load(object? sender, EventArgs e)
     {
         this.Hide();
-        
-        // Pre-warm Copilot client in background to eliminate cold-start on first use
-        if (ConfigManager.IsProviderConfigured() && ConfigManager.GetProvider() == AIProvider.GitHubCopilot)
-        {
-            _ = CopilotClientManager.Instance.WarmUpAsync();
-        }
-        
+
         // Check if provider is configured on startup
         if (!ConfigManager.IsProviderConfigured())
         {
             ShowConfigurationRequired();
+            return;
         }
-        else if (openPopupOnStart)
+
+        if (openPopupOnStart)
         {
             OpenClipboardPopup();
         }
+
+        QueueCopilotWarmup();
+    }
+
+    private void QueueCopilotWarmup()
+    {
+        if (ConfigManager.GetProvider() != AIProvider.GitHubCopilot)
+            return;
+
+        BeginInvoke((Action)(() => _ = CopilotClientManager.Instance.WarmUpAsync()));
     }
     
     private void ShowConfigurationRequired()
@@ -54,9 +61,8 @@ public partial class MainForm : Form
             MessageBoxButtons.OK,
             MessageBoxIcon.Information);
         
-        // Open the new shell directly. The user can switch to Settings via the rail.
-        var popup = new AIPaste.UI.AppShellForm(string.Empty);
-        popup.Show();
+        // Open the shell directly. The user can switch to Settings via the rail.
+        ShowAppWindow(string.Empty);
     }
 
     private void InitializeSystemTray()
@@ -134,28 +140,44 @@ public partial class MainForm : Form
         
         try
         {
-            string clipboardText = string.Empty;
-            if (Clipboard.ContainsText())
-            {
-                clipboardText = Clipboard.GetText();
-            }
-
-            if (!string.IsNullOrEmpty(clipboardText))
-            {
-                var popup = new AIPaste.UI.AppShellForm(clipboardText);
-                popup.Show();
-            }
-            else
-            {
-                MessageBox.Show("No text found in clipboard.", "AIPaste", 
-                    MessageBoxButtons.OK, MessageBoxIcon.Information);
-            }
+            ShowAppWindow(ReadClipboardText() ?? string.Empty);
         }
         catch (Exception ex)
         {
             MessageBox.Show($"Error opening clipboard popup: {ex.Message}\n\n{ex.GetType().FullName}\n{ex.StackTrace}", "Error", 
                 MessageBoxButtons.OK, MessageBoxIcon.Error);
         }
+    }
+
+    private void ShowAppWindow(string clipboardText)
+    {
+        if (appWindow == null || appWindow.IsDisposed)
+        {
+            appWindow = new AIPaste.UI.AppShellForm(clipboardText);
+            appWindow.FormClosed += (_, _) => appWindow = null;
+        }
+        else if (!string.IsNullOrEmpty(clipboardText))
+        {
+            appWindow.UpdateClipboardText(clipboardText);
+        }
+
+        if (appWindow.WindowState == FormWindowState.Minimized)
+        {
+            appWindow.WindowState = FormWindowState.Normal;
+        }
+
+        appWindow.Show();
+        appWindow.Activate();
+        appWindow.RefreshFromClipboard();
+    }
+
+    private static string? ReadClipboardText()
+    {
+        if (!Clipboard.ContainsText())
+            return null;
+
+        var text = Clipboard.GetText();
+        return string.IsNullOrEmpty(text) ? null : text;
     }
 
     private void OnExit(object? sender, EventArgs e)

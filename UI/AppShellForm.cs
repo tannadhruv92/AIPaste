@@ -20,6 +20,8 @@ public class AppShellForm : Form
     private const int DWMWA_CAPTION_COLOR = 35;          // Win11 build 22000+
     private const int DWMWA_BORDER_COLOR = 34;
     private const int DWMWA_TEXT_COLOR = 36;
+    private const int WS_SYSMENU = 0x00080000;
+    private const int WS_MINIMIZEBOX = 0x00020000;
 
     // === Win32: borderless drag-by-grabbing-top-bar ===
     [DllImport("user32.dll")]
@@ -63,6 +65,7 @@ public class AppShellForm : Form
     private CustomActionsPane? _customPane;
 
     private string _clipboardText;
+    private bool _refreshingClipboard;
 
     public AppShellForm(string clipboardText)
     {
@@ -77,13 +80,25 @@ public class AppShellForm : Form
         ForeColor = Theme.Text;
         Font = Theme.Body();
         Icon = LoadAppIcon();
-        ShowInTaskbar = false;
-        TopMost = true;
+        ShowInTaskbar = true;
+        MinimizeBox = true;
+        MaximizeBox = false;
+        TopMost = false;
         KeyPreview = true;
 
         BuildLayout();
         ShowPane(AppPane.Process);
         KeyDown += OnGlobalKeyDown;
+    }
+
+    protected override CreateParams CreateParams
+    {
+        get
+        {
+            var cp = base.CreateParams;
+            cp.Style |= WS_SYSMENU | WS_MINIMIZEBOX;
+            return cp;
+        }
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -98,6 +113,54 @@ public class AppShellForm : Form
         // Put keyboard focus on the Rewrite button as soon as the popup opens.
         if (_rail.Selected == AppPane.Process)
             BeginInvoke((Action)(() => _processPane?.FocusPrimary()));
+        RefreshFromClipboard();
+    }
+
+    protected override void OnActivated(EventArgs e)
+    {
+        base.OnActivated(e);
+        RefreshFromClipboard();
+    }
+
+    public void RefreshFromClipboard()
+    {
+        if (_refreshingClipboard)
+            return;
+
+        try
+        {
+            _refreshingClipboard = true;
+            if (!Clipboard.ContainsText())
+                return;
+
+            var clipboardText = Clipboard.GetText();
+            if (string.IsNullOrEmpty(clipboardText))
+                return;
+
+            UpdateClipboardText(clipboardText);
+        }
+        catch
+        {
+            // Clipboard can be temporarily locked by another app; keep the current source text.
+        }
+        finally
+        {
+            _refreshingClipboard = false;
+        }
+    }
+
+    public void UpdateClipboardText(string clipboardText)
+    {
+        clipboardText ??= string.Empty;
+        if (string.Equals(_clipboardText, clipboardText, StringComparison.Ordinal))
+            return;
+
+        _clipboardText = clipboardText;
+        _processPane?.UpdateOriginal(_clipboardText);
+        if (_rail.Selected == AppPane.Process)
+        {
+            _appSubtitle.Text = $"{_clipboardText.Length} chars from clipboard · ready to process";
+        }
     }
 
     private void BuildLayout()
@@ -138,18 +201,22 @@ public class AppShellForm : Form
         };
 
         var pinBtn = MakeTopIconBtn("📌", "Pin on top");
-        pinBtn.Visible = false; // hidden — popup is always TopMost
-        var closeBtn = MakeTopIconBtn("✕", "Close (Esc)", danger: true);
+        pinBtn.Visible = false;
+        var minimizeBtn = MakeTopIconBtn("—", "Minimize");
+        minimizeBtn.Click += (_, _) => WindowState = FormWindowState.Minimized;
+        var closeBtn = MakeTopIconBtn("✕", "Close", danger: true);
         closeBtn.Click += (_, _) => Close();
 
         _topBar.SizeChanged += (_, _) =>
         {
             closeBtn.Location = new Point(_topBar.Width - 40, 9);
+            minimizeBtn.Location = new Point(_topBar.Width - 74, 9);
         };
 
         _topBar.Controls.Add(_appTitle);
         _topBar.Controls.Add(_appSubtitle);
         _topBar.Controls.Add(pinBtn);
+        _topBar.Controls.Add(minimizeBtn);
         _topBar.Controls.Add(closeBtn);
 
         // Allow dragging the borderless window by grabbing the top bar.
@@ -220,7 +287,7 @@ public class AppShellForm : Form
                         () => ShowPane(AppPane.CustomActions),
                         () => ShowPane(AppPane.Settings))
                     { Dock = DockStyle.Fill };
-                    _processPane.AcceptedAndCopied += (_, _) => Close();
+                    _processPane.AcceptedAndCopied += (_, _) => WindowState = FormWindowState.Minimized;
                 }
                 _contentHost.Controls.Add(_processPane);
                 _appTitle.Text = "AIPaste";
@@ -320,7 +387,7 @@ public class AppShellForm : Form
     {
         if (e.KeyCode == Keys.Escape)
         {
-            Close();
+            WindowState = FormWindowState.Minimized;
             e.Handled = true;
             return;
         }
