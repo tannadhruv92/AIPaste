@@ -68,6 +68,53 @@ function Ensure-DotNet9DesktopRuntime {
     }
 }
 
+function Save-AIPasteArchive {
+    param(
+        [string]$Uri,
+        [string]$Destination,
+        [hashtable]$RequestHeaders
+    )
+
+    $curl = Get-Command 'curl.exe' -ErrorAction SilentlyContinue
+    if ($curl) {
+        Write-Host 'Downloading release with curl...'
+        & $curl.Source `
+            --fail `
+            --location `
+            --retry 3 `
+            --retry-delay 2 `
+            --connect-timeout 30 `
+            --user-agent $RequestHeaders['User-Agent'] `
+            --output $Destination `
+            $Uri
+
+        if ($LASTEXITCODE -eq 0) {
+            return
+        }
+
+        Remove-Item -LiteralPath $Destination -Force -ErrorAction SilentlyContinue
+        Write-Warning 'curl could not complete the download. Retrying with PowerShell...'
+    }
+
+    $downloadParams = @{
+        Uri = $Uri
+        OutFile = $Destination
+        Headers = $RequestHeaders
+    }
+    if ((Get-Command Invoke-WebRequest).Parameters.ContainsKey('UseBasicParsing')) {
+        $downloadParams.UseBasicParsing = $true
+    }
+
+    $previousProgressPreference = $ProgressPreference
+    try {
+        $ProgressPreference = 'SilentlyContinue'
+        Invoke-WebRequest @downloadParams
+    }
+    finally {
+        $ProgressPreference = $previousProgressPreference
+    }
+}
+
 function Resolve-AIPasteReleaseAssetUrl {
     param(
         [string]$Repo,
@@ -175,15 +222,7 @@ try {
     New-Item -ItemType Directory -Path $tempRoot, $expandedPath -Force | Out-Null
 
     Write-Host "Downloading $DownloadUrl"
-    $downloadParams = @{
-        Uri = $DownloadUrl
-        OutFile = $zipPath
-        Headers = $headers
-    }
-    if ((Get-Command Invoke-WebRequest).Parameters.ContainsKey('UseBasicParsing')) {
-        $downloadParams.UseBasicParsing = $true
-    }
-    Invoke-WebRequest @downloadParams
+    Save-AIPasteArchive -Uri $DownloadUrl -Destination $zipPath -RequestHeaders $headers
 
     Unblock-File -Path $zipPath -ErrorAction SilentlyContinue
 
