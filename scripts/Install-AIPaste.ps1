@@ -10,10 +10,62 @@ $ErrorActionPreference = 'Stop'
 $repo = 'tannadhruv92/AIPaste'
 $assetPattern = 'AIPaste-v*.zip'
 $headers = @{ 'User-Agent' = 'AIPaste installer' }
+$dotnetDownloadUrl = 'https://dotnet.microsoft.com/download/dotnet/9.0/runtime'
 $tempRoot = $null
 
 if ($PSVersionTable.PSEdition -eq 'Desktop') {
     [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
+}
+
+function Test-DotNet9DesktopRuntime {
+    $dotnetCommand = Get-Command 'dotnet' -ErrorAction SilentlyContinue
+    $dotnetPath = if ($dotnetCommand) {
+        $dotnetCommand.Source
+    }
+    else {
+        Join-Path $env:ProgramFiles 'dotnet\dotnet.exe'
+    }
+
+    if (-not (Test-Path -LiteralPath $dotnetPath -PathType Leaf)) {
+        return $false
+    }
+
+    try {
+        $runtimes = @(& $dotnetPath --list-runtimes 2>$null)
+        return [bool]($runtimes | Where-Object { $_ -match '^Microsoft\.WindowsDesktop\.App 9\.' } | Select-Object -First 1)
+    }
+    catch {
+        return $false
+    }
+}
+
+function Ensure-DotNet9DesktopRuntime {
+    if (Test-DotNet9DesktopRuntime) {
+        Write-Host '.NET 9 Desktop Runtime is installed.'
+        return
+    }
+
+    Write-Host ''
+    Write-Host 'AIPaste requires the .NET 9 Desktop Runtime.'
+    $winget = Get-Command 'winget' -ErrorAction SilentlyContinue
+    if (-not $winget) {
+        throw "Windows Package Manager (winget) was not found. Install the .NET 9 Desktop Runtime from $dotnetDownloadUrl, then rerun this installer."
+    }
+
+    $answer = Read-Host 'Install the .NET 9 Desktop Runtime now using winget? [Y/n]'
+    if ($answer -and $answer -notmatch '^(?i:y|yes)$') {
+        throw "Installation cancelled. Install the .NET 9 Desktop Runtime from $dotnetDownloadUrl before installing AIPaste."
+    }
+
+    Write-Host 'Installing the .NET 9 Desktop Runtime...'
+    & $winget.Source install --id Microsoft.DotNet.DesktopRuntime.9 --exact --source winget --accept-source-agreements --accept-package-agreements
+    if ($LASTEXITCODE -ne 0) {
+        throw "winget could not install the .NET 9 Desktop Runtime. Install it from $dotnetDownloadUrl, then rerun this installer."
+    }
+
+    if (-not (Test-DotNet9DesktopRuntime)) {
+        throw "The .NET 9 Desktop Runtime installation could not be verified. Restart PowerShell and rerun this installer. Download: $dotnetDownloadUrl"
+    }
 }
 
 function Resolve-AIPasteReleaseAssetUrl {
@@ -105,6 +157,7 @@ try {
     $defaultInstallPath = Join-Path $env:LOCALAPPDATA 'AIPaste'
     $InstallPath = Resolve-AIPasteInstallPath -DefaultPath $defaultInstallPath
     Confirm-AIPasteInstallPathReplacement -Path $InstallPath
+    Ensure-DotNet9DesktopRuntime
 
     if (-not $DownloadUrl) {
         $DownloadUrl = Resolve-AIPasteReleaseAssetUrl -Repo $repo -ReleaseVersion $Version -Pattern $assetPattern -RequestHeaders $headers
@@ -112,7 +165,7 @@ try {
 
     $runningProcess = Get-Process -Name 'AIPaste' -ErrorAction SilentlyContinue
     if ($runningProcess) {
-        throw 'AIPaste is currently running. Close it from the system tray, then rerun this script.'
+        throw 'AIPaste is currently running. Exit it from the system tray, then rerun this script.'
     }
 
     $tempRoot = Join-Path ([IO.Path]::GetTempPath()) ('AIPaste-' + [Guid]::NewGuid().ToString('N'))
@@ -158,9 +211,13 @@ try {
     Get-ChildItem -LiteralPath $InstallPath -Recurse -File -Force | Unblock-File -ErrorAction SilentlyContinue
 
     Write-Host "AIPaste installed to $InstallPath"
-    Write-Host 'Opening the install folder...'
-    Write-Host 'For best access, right-click AIPaste.exe in this folder and choose Pin to taskbar.'
+    Write-Host 'Starting AIPaste and opening the install folder...'
+    Write-Host 'To pin AIPaste, right-click its running taskbar icon and choose Pin to taskbar.'
+    Start-Process -FilePath (Join-Path $InstallPath 'AIPaste.exe') -WorkingDirectory $InstallPath
     Invoke-Item -LiteralPath $InstallPath
+
+    Write-Host ''
+    [void](Read-Host 'Installation complete. Press Enter to close this installer')
 }
 finally {
     if ($tempRoot -and (Test-Path -LiteralPath $tempRoot)) {

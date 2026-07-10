@@ -7,10 +7,10 @@
     <UseWindowsForms>true</UseWindowsForms>
     <ImplicitUsings>enable</ImplicitUsings>
     <ApplicationIcon>app.ico</ApplicationIcon>
-    <!-- Product version — CLI/SDK Copilot integration restored on the themed UI shell. -->
-    <Version>2.2.1</Version>
-    <AssemblyVersion>2.2.1.0</AssemblyVersion>
-    <FileVersion>2.2.1.0</FileVersion>
+    <!-- Product version — persistent window and startup warmup workflow. -->
+    <Version>2.3.0</Version>
+    <AssemblyVersion>2.3.0.0</AssemblyVersion>
+    <FileVersion>2.3.0.0</FileVersion>
     <Product>AIPaste</Product>
     <Company>Dhruv Tanna</Company>
     <Copyright>Copyright © 2026 Dhruv Tanna</Copyright>

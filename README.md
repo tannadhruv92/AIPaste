@@ -1,11 +1,22 @@
 # AIPaste 🚀
 
-A Windows system-tray companion that **transforms your clipboard with AI**. Rewrite, translate, or run your own custom prompts on any copied text — all from a polished, keyboard-friendly popup.
+A Windows desktop app that **transforms your clipboard with AI**. Keep it running, copy text in any app, return to AIPaste, and rewrite, translate, or run a custom prompt from a polished, keyboard-friendly workspace.
 
 ![.NET](https://img.shields.io/badge/.NET-9.0-blue)
 ![Platform](https://img.shields.io/badge/Platform-Windows-lightgrey)
 ![License](https://img.shields.io/badge/License-MIT-green)
-![Version](https://img.shields.io/badge/Version-2.2.1-purple)
+![Version](https://img.shields.io/badge/Version-2.3.0-purple)
+
+---
+
+## 🆕 What's new in **v2.3.0**
+
+- **Persistent desktop window** – Keep AIPaste open like Outlook or Teams, minimize it to the taskbar, and restore it whenever you need another transform.
+- **Automatic clipboard refresh** – Returning to or restoring AIPaste automatically loads the latest copied text into the Source pane.
+- **Faster repeated use** – Copilot warms in the background after the UI appears, and client initialization is serialized to prevent competing runtime startups.
+- **Isolated transforms** – Every Rewrite, Translate, or Custom request still uses a fresh Copilot session, so previous text never leaks into the next request.
+- **Single-instance restore** – Starting `AIPaste.exe` again restores the existing running app instead of creating a duplicate.
+- **Smarter installer** – The installer checks for the .NET 9 Desktop Runtime, can install it through winget with confirmation, starts AIPaste, opens its install folder, and keeps its taskbar-pinning guidance visible.
 
 ---
 
@@ -48,7 +59,7 @@ A complete UI redesign and rearchitecture. AIPaste went from a stack of basic Wi
 
 ## 📸 Screenshots
 
-### Main Popup — Process Pane
+### Main Window — Process Pane
 ![Main Popup](docs/images/main-popup.png)
 
 ### Settings — GitHub Copilot
@@ -73,8 +84,10 @@ A complete UI redesign and rearchitecture. AIPaste went from a stack of basic Wi
 - **Streaming output** – AI result appears live, character by character
 - **Theme** – System · Light · Dark, switchable in Settings (follows Windows by default)
 - **Status bar** – Always-on auth indicator + current model
-- **Single-instance** – Activate the running tray app instead of launching duplicates
-- **System tray** – Quietly minimised; one click to open, one click to quit
+- **Persistent workspace** – Keep AIPaste running and minimize/restore it from the Windows taskbar
+- **Clipboard refresh on activation** – The latest copied text appears automatically when you return to AIPaste
+- **Single-instance** – Starting AIPaste again restores the existing app instead of launching a duplicate
+- **System tray** – Optional quick access to open or exit the running app
 
 ---
 
@@ -92,13 +105,13 @@ A complete UI redesign and rearchitecture. AIPaste went from a stack of basic Wi
 
 ### Option 1 — Install Release Zip (recommended)
 
-Run the installer script. It downloads the latest `AIPaste-v*.zip` from [Releases](../../releases), removes the Windows downloaded-file security mark, asks where to install it, and unblocks the extracted files. Press **Enter** at the location prompt to use `%LOCALAPPDATA%\AIPaste`.
+Run the installer script. It checks for the .NET 9 Desktop Runtime (and offers to install it through winget if needed), downloads the latest `AIPaste-v*.zip` from [Releases](../../releases), asks where to install it, unblocks the extracted files, starts AIPaste, and opens its install folder. The installer waits for you to press **Enter** so its taskbar-pinning guidance remains visible. Press **Enter** at the location prompt to use `%LOCALAPPDATA%\AIPaste`.
 
 ```powershell
 powershell -ExecutionPolicy Bypass -File .\scripts\Install-AIPaste.ps1
 ```
 
-Then run `%LOCALAPPDATA%\AIPaste\AIPaste.exe` — it starts in the system tray.
+Then run `%LOCALAPPDATA%\AIPaste\AIPaste.exe`. Keep the window open or minimized to the taskbar for fast repeated transforms.
 
 Manual install is also supported: download the latest `AIPaste-v*.zip`, right-click it, choose **Properties**, check **Unblock**, extract it to `%LOCALAPPDATA%\AIPaste`, then run `AIPaste.exe`.
 
@@ -115,7 +128,7 @@ The build pulls the bundled GitHub Copilot CLI on first compile (~50 MB download
 ### Create a Release Zip
 
 ```powershell
-$version = "2.2.1"
+$version = "2.3.0"
 $out = "publish\AIPaste-v$version"
 dotnet publish .\AIPaste.csproj -c Release -r win-x64 --self-contained false -p:PublishSingleFile=false -o $out
 Compress-Archive -Path "$out\*" -DestinationPath "publish\AIPaste-v$version.zip" -Force
@@ -127,7 +140,7 @@ Upload `publish\AIPaste-v$version.zip` to the GitHub release. Do not upload `pub
 
 ## ⚙️ Configuration
 
-When you first run AIPaste, it'll prompt you to configure a provider. Inside the popup, click the **⚙ Settings** icon at the bottom of the rail.
+When you first run AIPaste, it'll prompt you to configure a provider. Inside the app window, click the **⚙ Settings** icon at the bottom of the rail.
 
 ### Appearance
 
@@ -164,21 +177,21 @@ API keys are encrypted with Windows DPAPI before being stored in `config.json` (
 
 ## 🚀 Usage
 
-1. **Run** `AIPaste.exe` — it minimises to the system tray
-2. **Copy** any text (`Ctrl+C`)
-3. **Click** the AIPaste tray icon (or double-click) to open the popup
+1. **Run** `AIPaste.exe` once and leave it open or minimized
+2. **Copy** any text (`Ctrl+C`) from another app
+3. **Return to AIPaste** — the Source pane automatically refreshes with the latest clipboard text
 4. **Pick a mode** — Rewrite, Translate, or Custom
-5. **Tweak chips** — Tone, Language, or Action depending on mode
-6. *(Optional)* Click the model name in the split button to switch models for this request only
-7. **Press Enter** (or click ✨ **Process**) — result streams into the AI Result card
-8. **✓ Accept & Copy** — copies the result to your clipboard and closes the popup
+5. **Tweak controls** — Tone, Language, or Action depending on mode
+6. *(Optional)* Click the model name to switch models for this request only
+7. **Press Enter** (or click ✨ **Process**) — the result streams into the Result pane
+8. **✓ Accept & Copy** — copies the result and minimizes AIPaste so you can paste it into the original app
 
 ### Keyboard shortcuts
 
 | Key | Action |
 |---|---|
 | `Enter` | Run Process (the split button has default focus) |
-| `Esc` | Close the popup |
+| `Esc` | Minimize AIPaste |
 | `Ctrl+1` | Process pane |
 | `Ctrl+2` | Custom Actions pane |
 | `Ctrl+,` | Settings pane |
@@ -236,7 +249,7 @@ AIPaste/
 ├── UI/
 │   ├── Theme.cs                # Colours, fonts, metrics
 │   ├── GraphicsExt.cs          # Rounded-rect helpers
-│   ├── AppShellForm.cs         # Main popup window (rail + content + status bar)
+│   ├── AppShellForm.cs         # Persistent app window + activation clipboard refresh
 │   ├── Controls/
 │   │   ├── ChipButton.cs       # Pill-shaped chip
 │   │   ├── ChipGroup.cs        # Labelled chip row (Mode / Tone / Language / Action)
